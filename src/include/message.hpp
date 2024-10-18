@@ -10,12 +10,19 @@ private:
 public:
     Message(int seq_id);
     int seq_id() const;
-    void *data() const;
+    const void *data() const;
     std::size_t size() const;
+    bool operator==(const Message& other) const;
 };
 
 struct MessageHash {
     std::size_t operator()(const Message& msg) const {
         return std::hash<int>()(msg.seq_id());
+    }
+};
+
+struct MessageEqual {
+    bool operator()(const Message& lhs, const Message& rhs) const {
+        return lhs == rhs;
     }
 };

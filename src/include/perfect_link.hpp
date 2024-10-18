@@ -10,8 +10,8 @@ class PerfectLink {
 private:
     int _sockfd;
     struct sockaddr_in _addr;
-    std::unordered_set<Message, MessageHash> _sent;
-    std::unordered_set<Message, MessageHash> _delivered;
+    std::unordered_set<Message, MessageHash, MessageEqual> _sent;
+    std::unordered_set<Message, MessageHash, MessageEqual> _delivered;
 
 public:
     PerfectLink(const char *ip, uint16_t port);

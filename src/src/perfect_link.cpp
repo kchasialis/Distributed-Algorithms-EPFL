@@ -33,6 +33,9 @@ void PerfectLink::send(const Message& m, const Process& q) {
 }
 
 void PerfectLink::receive(const Message& m, const Process& p) {
+    if (_delivered.find(m) != _delivered.end()) {
+        return;
+    }
     recvfrom(_sockfd, m.data(), m.size(), 0,
              reinterpret_cast<struct sockaddr*>(&p.addr), sizeof(p.addr));
 }
