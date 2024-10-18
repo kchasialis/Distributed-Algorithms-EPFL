@@ -1,0 +1,12 @@
+/bin
+/cmake-build-*
+CMakeCache.txt
+CMakeFiles/
+/CMakeScripts/
+/CTestTestfile.cmake
+/cmake_install.cmake
+Makefile
+.idea/
+*.iml
+.idea/workspace.xml
+.idea/tasks.xml
