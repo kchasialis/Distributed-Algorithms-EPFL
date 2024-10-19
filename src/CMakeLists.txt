@@ -5,7 +5,8 @@ include_directories(include)
 set(SOURCES src/main.cpp
             src/perfect_link.cpp
             src/message.cpp
-        src/process.cpp)
+            src/process.cpp
+            src/config.cpp)
 
 # DO NOT EDIT THE FOLLOWING LINES
 find_package(Threads)
