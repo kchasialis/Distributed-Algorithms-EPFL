@@ -6,7 +6,7 @@
 #include "perfect_link.hpp"
 
 Process::Process(uint64_t id, in_addr_t addr, uint16_t port, bool sender) :
-        _pid(getpid()), _id(id), _link(std::make_unique<PerfectLink>(addr, port, sender)),
+        _pid(getpid()), _id(id), _link(std::make_unique<PerfectLink>(addr, port)),
         _sender(sender) {}
 
 int Process::pid() const {
@@ -17,12 +17,12 @@ uint64_t Process::id() const {
   return _id;
 }
 
-bool Process::sender() const {
-  return _sender;
-}
-
 PerfectLink& Process::link() const {
   return *_link;
+}
+
+bool Process::sender() const {
+  return _sender;
 }
 
 bool Process::operator==(const Process& other) const {

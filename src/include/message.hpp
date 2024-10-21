@@ -9,7 +9,7 @@ private:
 
 public:
   Message() = default;
-  explicit Message(uint32_t seq_id);
+  Message(uint32_t seq_id);
   uint32_t seq_id() const;
   const void *data() const;
   void *data();

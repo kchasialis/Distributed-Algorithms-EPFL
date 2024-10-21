@@ -2,6 +2,7 @@
 #include <iostream>
 #include <thread>
 #include <csignal>
+#include <cassert>
 
 #include "parser.hpp"
 #include "process.hpp"
@@ -58,11 +59,12 @@ static int run_process(Parser &parser, const Config& cfg) {
   std::cerr << "I am process with id: " << current_process.id() << std::endl;
 
   if (current_process.sender()) {
-    std::cout << "Sending messages.\n";
     for (uint32_t i = 0; i < cfg.num_messages(); i++) {
       Message m{i};
       for (const auto &host: parser.hosts()) {
-        if (host.id != current_process.id()) {
+        if (host.id == cfg.receiver_proc()) {
+          assert(host.id != current_process.id());
+
           std::cout << "Sending message to process with id: " << host.id << std::endl;
           struct sockaddr_in addr{};
           addr.sin_family = AF_INET;
@@ -74,8 +76,10 @@ static int run_process(Parser &parser, const Config& cfg) {
     }
   } else {
     std::cout << "Receiving messages!" << std::endl;
-    Message m{};
-    current_process.link().deliver(m);
+    while (true) {
+      Message m{};
+      current_process.link().deliver(m);
+    }
   }
 
   return 0;

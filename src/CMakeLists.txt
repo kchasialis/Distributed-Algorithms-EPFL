@@ -3,6 +3,7 @@
 
 include_directories(include)
 set(SOURCES src/main.cpp
+            src/stubborn_link.cpp
             src/perfect_link.cpp
             src/message.cpp
             src/process.cpp

@@ -1,22 +1,19 @@
 #pragma once
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include <unordered_set>
 #include "message.hpp"
+#include "stubborn_link.hpp"
 
 class Process;
 
 class PerfectLink {
 private:
-  int _sockfd;
-  struct sockaddr_in _addr{};
+  StubbornLink _sl;
   std::unordered_set<Message, MessageHash, MessageEqual> _sent;
   std::unordered_set<Message, MessageHash, MessageEqual> _delivered;
 
 public:
-  PerfectLink(in_addr_t addr, uint16_t port, bool sender);
-  virtual ~PerfectLink();
+  PerfectLink(in_addr_t addr, uint16_t port);
 
   int sockfd() const;
   const struct sockaddr_in& addr() const;
