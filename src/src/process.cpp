@@ -21,7 +21,7 @@ bool Process::sender() const {
   return _sender;
 }
 
-const PerfectLink& Process::link() const {
+PerfectLink& Process::link() const {
   return *_link;
 }
 

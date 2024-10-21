@@ -22,7 +22,7 @@ public:
   const struct sockaddr_in& addr() const;
   const std::unordered_set<Message, MessageHash, MessageEqual>& sent() const;
   const std::unordered_set<Message, MessageHash, MessageEqual>& delivered() const;
-  void send(const Message& m, const Process& q);
-  void receive(Message& m, const Process& p);
+  void send(const Message& m, sockaddr_in& q_addr);
+  void deliver(Message& m);
 };
 

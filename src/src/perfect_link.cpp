@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -18,6 +19,8 @@ PerfectLink::PerfectLink(in_addr_t addr, uint16_t port, bool sender) {
   // Already converted to network byte order.
   _addr.sin_port = port;
   _addr.sin_addr.s_addr = addr;
+
+  std::cerr << "PerfectLink created with address: " << inet_ntoa(_addr.sin_addr) << " and port: " << ntohs(_addr.sin_port) << std::endl;
 
   if (!sender) {
       if (bind(_sockfd, reinterpret_cast<struct sockaddr*>(&_addr), sizeof(_addr)) < 0) {
@@ -47,8 +50,9 @@ const std::unordered_set<Message, MessageHash, MessageEqual>& PerfectLink::deliv
   return _delivered;
 }
 
-void PerfectLink::send(const Message& m, const Process& q) {
-  auto q_addr = q.link().addr();
+void PerfectLink::send(const Message& m, sockaddr_in& q_addr) {
+  std::cout << "Sending message with seq_id: " << m.seq_id() << std::endl;
+
   ssize_t bytes_sent = sendto(_sockfd, m.data(), m.size(), 0,
                               reinterpret_cast<struct sockaddr*>(&q_addr),
                               sizeof(q_addr));
@@ -61,15 +65,15 @@ void PerfectLink::send(const Message& m, const Process& q) {
   _sent.insert(m);
 }
 
-void PerfectLink::receive(Message& m, const Process& p) {
+void PerfectLink::deliver(Message& m) {
   if (_delivered.find(m) != _delivered.end()) {
       return;
   }
 
-  auto p_addr = p.link().addr();
-  socklen_t addr_len = sizeof(p_addr);
+  struct sockaddr_in sender_addr;
+  socklen_t addr_len = sizeof(sender_addr);
   ssize_t bytes_recv = recvfrom(_sockfd, m.data(), m.size(), 0,
-                                reinterpret_cast<struct sockaddr*>(&p_addr),
+                                reinterpret_cast<struct sockaddr*>(&sender_addr),
                                 &addr_len);
   if (bytes_recv < 0) {
       std::string err_msg = "recvfrom() failed. Error message: ";
@@ -78,4 +82,6 @@ void PerfectLink::receive(Message& m, const Process& p) {
       exit(EXIT_FAILURE);
   }
   _delivered.insert(m);
+
+  std::cout << "Received message with seq_id: " << m.seq_id() << std::endl;
 }

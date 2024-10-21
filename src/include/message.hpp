@@ -5,11 +5,12 @@
 
 class Message {
 private:
-  int _seq_id;
+  uint32_t _seq_id;
 
 public:
-  explicit Message(int seq_id);
-  int seq_id() const;
+  Message() = default;
+  explicit Message(uint32_t seq_id);
+  uint32_t seq_id() const;
   const void *data() const;
   void *data();
   std::size_t size() const;
@@ -18,7 +19,7 @@ public:
 
 struct MessageHash {
   std::size_t operator()(const Message& msg) const {
-      return std::hash<int>()(msg.seq_id());
+      return std::hash<uint32_t>()(msg.seq_id());
   }
 };
 

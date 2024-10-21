@@ -35,23 +35,47 @@ static Config read_config_file(const std::string &configPath) {
     exit(1);
   }
 
-  uint32_t n_messages, sender_proc;
-  if (!(config_file >> n_messages >> sender_proc)) {
+  uint32_t n_messages, receiver_proc;
+  if (!(config_file >> n_messages >> receiver_proc)) {
     std::cerr << "Failed to read config values from: " << configPath << std::endl;
     exit(1);
   }
 
-  return {n_messages, sender_proc};
+  return {n_messages, receiver_proc};
 }
 
 static int run_process(Parser &parser, const Config& cfg) {
-  std::vector<Process> processes;
+  Parser::Host current_host;
   for (const auto &host: parser.hosts()) {
-    processes.emplace_back(host.id, host.ip, host.port, cfg.sender_proc() == host.id);
+    if (host.id == parser.id()) {
+      current_host = host;
+      break;
+    }
   }
 
-  for (const auto &process: processes) {
-    std::cout << "Process " << process.id() << " is a sender: " << process.sender() << std::endl;
+  Process current_process(parser.id(), current_host.ip, current_host.port, cfg.receiver_proc() != parser.id());
+
+  std::cerr << "I am process with id: " << current_process.id() << std::endl;
+
+  if (current_process.sender()) {
+    std::cout << "Sending messages.\n";
+    for (uint32_t i = 0; i < cfg.num_messages(); i++) {
+      Message m{i};
+      for (const auto &host: parser.hosts()) {
+        if (host.id != current_process.id()) {
+          std::cout << "Sending message to process with id: " << host.id << std::endl;
+          struct sockaddr_in addr{};
+          addr.sin_family = AF_INET;
+          addr.sin_port = host.port;
+          addr.sin_addr.s_addr = host.ip;
+          current_process.link().send(m, addr);
+        }
+      }
+    }
+  } else {
+    std::cout << "Receiving messages!" << std::endl;
+    Message m{};
+    current_process.link().deliver(m);
   }
 
   return 0;

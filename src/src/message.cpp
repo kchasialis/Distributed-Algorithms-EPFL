@@ -1,8 +1,8 @@
 #include "message.hpp"
 
-Message::Message(int seq_id) : _seq_id(seq_id) {}
+Message::Message(uint32_t seq_id) : _seq_id(seq_id) {}
 
-int Message::seq_id() const {
+uint32_t Message::seq_id() const {
   return _seq_id;
 }
 

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "perfect_link.hpp"
+#include "message.hpp"
 
 class Process {
 private:
@@ -21,7 +22,7 @@ public:
   int pid() const;
   uint64_t id() const;
   bool sender() const;
-  const PerfectLink& link() const;
+  PerfectLink& link() const;
   bool operator==(const Process& other) const;
 };
 
