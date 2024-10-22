@@ -2,22 +2,19 @@
 #include <iostream>
 #include <thread>
 #include <csignal>
-#include <cassert>
 
+#include "config.hpp"
 #include "parser.hpp"
 #include "process.hpp"
-#include "config.hpp"
+
+Process *process = nullptr;
 
 static void stop(int) {
   // reset signal handlers to default
   signal(SIGTERM, SIG_DFL);
   signal(SIGINT, SIG_DFL);
 
-  // immediately stop network packet processing
-  std::cout << "Immediately stopping network packet processing.\n";
-
-  // write/flush output file if necessary
-  std::cout << "Writing output.\n";
+  process->write_output();
 
   // exit directly from signal handler
   exit(0);
@@ -47,40 +44,26 @@ static Config read_config_file(const std::string &configPath) {
 
 static int run_process(Parser &parser, const Config& cfg) {
   Parser::Host current_host;
+  bool found = false;
   for (const auto &host: parser.hosts()) {
     if (host.id == parser.id()) {
       current_host = host;
+      found = true;
       break;
     }
   }
-
-  Process current_process(parser.id(), current_host.ip, current_host.port, cfg.receiver_proc() != parser.id());
-
-  std::cerr << "I am process with id: " << current_process.id() << std::endl;
-
-  if (current_process.sender()) {
-    for (uint32_t i = 0; i < cfg.num_messages(); i++) {
-      Message m{i};
-      for (const auto &host: parser.hosts()) {
-        if (host.id == cfg.receiver_proc()) {
-          assert(host.id != current_process.id());
-
-          std::cout << "Sending message to process with id: " << host.id << std::endl;
-          struct sockaddr_in addr{};
-          addr.sin_family = AF_INET;
-          addr.sin_port = host.port;
-          addr.sin_addr.s_addr = host.ip;
-          current_process.link().send(m, addr);
-        }
-      }
-    }
-  } else {
-    std::cout << "Receiving messages!" << std::endl;
-    while (true) {
-      Message m{};
-      current_process.link().deliver(m);
-    }
+  if (!found) {
+    std::cerr << "Failed to find host with id: " << parser.id() << std::endl;
+    return 1;
   }
+
+  process = new Process(parser.id(), current_host.ip, current_host.port,
+                        cfg.receiver_proc() != parser.id(),
+                        parser.outputPath(), parser.hosts());
+
+  std::cerr << "I am process with id: " << process->id() << std::endl;
+
+  process->run(cfg);
 
   return 0;
 }
@@ -93,6 +76,7 @@ int main(int argc, char **argv) {
 
   int err = run_process(parser, cfg);
   if (err != 0) {
+    std::cerr << "Failed to run process with id: " << parser.id() << std::endl;
     return err;
   }
 

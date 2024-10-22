@@ -65,14 +65,11 @@ void StubbornLink::send(const Message& m, sockaddr_in& q_addr) {
       exit(EXIT_FAILURE);
     }
 
-    std::cerr << "[DEBUG:Send] Waiting for ACK..." << std::endl;
-
     // Wait for ACK.
     Message ack{};
     ssize_t bytes_recv = recvfrom(_sockfd, ack.data(), ack.size(), 0, nullptr, nullptr);
     if (bytes_recv < 0) {
       if (errno == EWOULDBLOCK) {
-        std::cerr << "[DEBUG:Send] No ACK received, retrying...\n";
         continue;
       } else {
         std::string err_msg = "recvfrom() failed. Error message: ";
@@ -95,13 +92,13 @@ void StubbornLink::send(const Message& m, sockaddr_in& q_addr) {
   }
 }
 
-void StubbornLink::deliver(Message& m) {
+struct sockaddr_in StubbornLink::deliver(Message& m) {
   struct sockaddr_in sender_addr;
   socklen_t addr_len = sizeof(sender_addr);
   ssize_t bytes_recv = recvfrom(_sockfd, m.data(), m.size(), 0,
                                 reinterpret_cast<struct sockaddr*>(&sender_addr),
                                 &addr_len);
-  std::cerr << "[DEBUG:Deliver] Received message with seq_id: " << m.seq_id() << std::endl;
+  std::cerr << "[DEBUG:SL-Deliver] Received message with seq_id: " << m.seq_id() << std::endl;
   if (bytes_recv < 0) {
     std::string err_msg = "recvfrom() failed. Error message: ";
     err_msg += strerror(errno);
@@ -109,7 +106,7 @@ void StubbornLink::deliver(Message& m) {
     exit(EXIT_FAILURE);
   }
 
-  std::cerr << "[DEBUG:Deliver] Sending ACK for seq_id: " << m.seq_id() << std::endl;
+  std::cerr << "[DEBUG:SL-Deliver] Sending ACK for seq_id: " << m.seq_id() << std::endl;
 
   // Send ACK back to the sender.
   Message ack(m.seq_id());
@@ -122,4 +119,6 @@ void StubbornLink::deliver(Message& m) {
     perror(err_msg.c_str());
     exit(EXIT_FAILURE);
   }
+
+  return sender_addr;
 }

@@ -16,6 +16,6 @@ public:
     int sockfd() const;
     const struct sockaddr_in& addr() const;
     void send(const Message& m, sockaddr_in& q_addr);
-    void deliver(Message& m);
+    struct sockaddr_in deliver(Message& m);
 };
 
