@@ -11,8 +11,8 @@
 Process::Process(uint64_t id, in_addr_t addr, uint16_t port, bool sender, std::string outfile,
                  const std::vector<Parser::Host>& hosts) :
         _pid(getpid()), _id(id),
-        _link(std::make_unique<PerfectLink>(addr, port, hosts)),
-        _sender(sender), _outfile(std::move(outfile)) {
+        _link(std::make_unique<PerfectLink>(addr, port, hosts)), _sender(sender),
+        _outfile(std::move(outfile)) {
 
   for (const auto& host : hosts) {
     struct sockaddr_in host_addr{};
