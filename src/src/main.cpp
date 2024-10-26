@@ -7,17 +7,22 @@
 #include "parser.hpp"
 #include "process.hpp"
 
-Process *process = nullptr;
+std::function<void()> signal_handler;
+
+std::atomic<bool> stop_requested{false};
 
 static void stop(int) {
   // reset signal handlers to default
   signal(SIGTERM, SIG_DFL);
   signal(SIGINT, SIG_DFL);
 
-  process->write_output();
+  stop_requested = true;
+  signal_handler();
+
+//  std::cerr << "Stop requested" << std::endl;
 
   // exit directly from signal handler
-  exit(0);
+//  exit(0);
 }
 
 static void register_signals() {
@@ -57,13 +62,16 @@ static int run_process(Parser &parser, const Config& cfg) {
     return 1;
   }
 
-  process = new Process(parser.id(), current_host.ip, current_host.port,
-                        cfg.receiver_proc() != parser.id(),
-                        parser.outputPath(), parser.hosts());
+  Process process(parser.id(), current_host.ip, current_host.port,
+                  parser.hosts(), cfg, parser.outputPath());
 
-  std::cerr << "I am process with id: " << process->id() << std::endl;
+//  signal_handler = [&process]() { process.stop(); };
+  signal_handler = [&process]() { process.event_loop().stop(); };
 
-  process->run(cfg);
+  std::cerr << "I am process with id: " << process.pid() << std::endl;
+
+  process.run(cfg);
+  process.stop();
 
   return 0;
 }
@@ -80,15 +88,22 @@ int main(int argc, char **argv) {
     return err;
   }
 
+//  while (!stop_requested) {
+//    std::cerr << "Process is running..." << std::endl;
+//    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//  }
+//  std::cerr << "Stopping process..." << std::endl;
+//  signal_handler();
+
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
   bool requireConfig = true;
 
   // After a process finishes broadcasting,
   // it waits forever for the delivery of messages.
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::hours(1));
-  }
+//  while (true) {
+//    std::this_thread::sleep_for(std::chrono::hours(1));
+//  }
 
   return 0;
 }

@@ -9,4 +9,4 @@ Makefile
 .idea/
 *.iml
 .idea/workspace.xml
-.idea/tasks.xml
+.idea/_task_queue.xml

@@ -2,123 +2,273 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
-#include <unistd.h>
+#include <utility>
 #include "stubborn_link.hpp"
 
-StubbornLink::StubbornLink(in_addr_t addr, uint16_t port) {
-  // Create a UDP socket.
-  _sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (_sockfd < 0) {
-    perror("socket creation failed");
-    exit(EXIT_FAILURE);
-  }
+StubbornLink::StubbornLink(in_addr_t addr, uint16_t port, in_addr_t paddr, uint16_t pport,
+                           bool sender,
+                           EventLoop& event_loop, DeliverCallback deliver_cb) :
+                           _socket(addr, port), _sender(sender), _event_loop(event_loop),
+                           _deliver_cb(std::move(deliver_cb)), _stop_thread(false) {
 
-  std::memset(&_addr, 0, sizeof(_addr));
-  _addr.sin_family = AF_INET;
-  // Already converted to network byte order.
-  _addr.sin_port = port;
-  _addr.sin_addr.s_addr = addr;
+  _local_addr.sin_family = AF_INET;
+  _local_addr.sin_port = port;
+  _local_addr.sin_addr.s_addr = addr;
 
-  std::cerr << "[DEBUG-SL] StubbornLink created with address: " << inet_ntoa(_addr.sin_addr) << " and port: " << ntohs(_addr.sin_port) << std::endl;
-  std::cerr << "[DEBUG-SL] StubbornLink port: " << port << std::endl;
+  _peer_addr.sin_family = AF_INET;
+  _peer_addr.sin_port = pport;
+  _peer_addr.sin_addr.s_addr = paddr;
+  _socket.conn(_peer_addr);
 
-  if (bind(_sockfd, reinterpret_cast<struct sockaddr*>(&_addr), sizeof(_addr)) < 0) {
-    perror("bind failed");
-    exit(EXIT_FAILURE);
+  _out_fd = _socket.sockfd();
+  _in_fd = dup(_out_fd);
+//  _out_fd = dup(_in_fd);
+
+  event_loop.add(_in_fd, EPOLLIN, [this](uint32_t events) {
+      read_event_handler(events);
+  });
+
+  if (_sender) {
+    _resend_thread = std::thread(&StubbornLink::resend_unacked_messages, this);
   }
 }
 
 StubbornLink::~StubbornLink() {
-  close(_sockfd);
-}
-
-int StubbornLink::sockfd() const {
-  return _sockfd;
-}
-
-const struct sockaddr_in& StubbornLink::addr() const {
-  return _addr;
-}
-
-void StubbornLink::send(const Message& m, sockaddr_in& q_addr) {
-  // Set timeout to 3 seconds.
-  struct timeval timeout{};
-  timeout.tv_sec = 3;
-  timeout.tv_usec = 0;
-
-  if (setsockopt(_sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-    perror("setsockopt failed");
-    exit(EXIT_FAILURE);
-  }
-
-  // Keep sending the message with a timeout until an ACK is received.
-  while (true) {
-    std::cerr << "[DEBUG:Send] Sending message with id: " << m.seq_id()  << std::endl;
-
-    ssize_t bytes_sent = sendto(_sockfd, m.data(), m.size(), 0,
-                                reinterpret_cast<struct sockaddr*>(&q_addr),
-                                sizeof(q_addr));
-    if (bytes_sent < 0) {
-      std::string err_msg = "sendto() failed. Error message: ";
-      err_msg += strerror(errno);
-      perror(err_msg.c_str());
-      exit(EXIT_FAILURE);
+//  std::cerr << "[DEBUG] StubbornLink::~StubbornLink: Destructing StubbornLink." << std::endl;
+  if (_sender) {
+    _stop_thread = true;
+    if (_resend_thread.joinable()) {
+      _resend_thread.join();
     }
+  }
+}
 
-    // Wait for ACK.
-    Message ack{};
-    ssize_t bytes_recv = recvfrom(_sockfd, ack.data(), ack.size(), 0, nullptr, nullptr);
-    if (bytes_recv < 0) {
-      if (errno == EWOULDBLOCK) {
-        continue;
-      } else {
-        std::string err_msg = "recvfrom() failed. Error message: ";
+//StubbornLink::~StubbornLink() {
+//  {
+//    std::lock_guard<std::mutex> lock(_unacked_mutex);
+//    _stop_thread = true;
+//  }
+//  _send_cv.notify_all();
+//  if (_resend_thread.joinable()) {
+//    _resend_thread.join();
+//  }
+//}
+
+void StubbornLink::read_event_handler(uint32_t events) {
+  if (events & EPOLLIN) {
+//    std::cerr << "[DEBUG] StubbornLink::read_event_handler: Data is available to read. " <<
+//    inet_ntoa(_local_addr.sin_addr) << " " << ntohs(_local_addr.sin_port) << std::endl;
+
+    // Data is available to read.
+    std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
+    while (true) {
+//      ssize_t nrecv = _socket.receive(buffer);
+      ssize_t nrecv = recv(_in_fd, buffer.data(), buffer.size(), 0);
+      if (nrecv == -1) {
+        if (errno == EWOULDBLOCK) {
+          // No more data to read.
+          break;
+        }
+        std::string err_msg = "read() failed. Error message: ";
         err_msg += strerror(errno);
         perror(err_msg.c_str());
         exit(EXIT_FAILURE);
       }
-    } else {
-      std::cout << "[DEBUG:Send] Received ACK for seq_id: " << ack.seq_id() << std::endl;
-      break;
+      if (nrecv == 0) {
+        continue;
+      }
+      // Process the received data.
+      Packet pkt;
+//      std::cerr << "[DEBUG] Read " << nrecv << " bytes from socket." << std::endl;
+      buffer.resize(static_cast<size_t>(nrecv));
+      pkt.deserialize(buffer);
+      process_packet(pkt);
+    }
+    _event_loop.rearm(_in_fd, EPOLLIN);
+  }
+}
+
+void StubbornLink::resend_unacked_messages() {
+  const int initial_interval_ms = 1000;
+  const int max_interval_ms = 16000;
+
+  int current_interval_ms = initial_interval_ms;
+
+  while (!_stop_thread) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
+
+    std::unique_lock<std::mutex> lock(_unacked_mutex);
+
+    bool success = false;
+
+//    std::cerr << "[DEBUG] Resending packets... thread_id: " << gettid() << std::endl;
+    for (const auto& [seq_id, pkt] : unacked_packets) {
+//      std::cerr << "[DEBUG] Resending packet with seq_id: " << seq_id << std::endl;
+      auto pkt_serialized = pkt.serialize();
+
+      ssize_t result = _socket.send1(pkt_serialized);
+      if (result == -1) {
+        if (errno == ECONNREFUSED) {
+//          std::cerr << "[DEBUG] Connection refused. Increasing time interval." << std::endl;
+          current_interval_ms = std::min(current_interval_ms * 2, max_interval_ms);
+        } else if (errno == EWOULDBLOCK) {
+          std::cerr << "[DEBUG] send() would block, retrying for packet seq_id: " << seq_id << std::endl;
+        } else {
+          perror("send failed");
+        }
+      } else {
+//        std::cerr << "[DEBUG] Successfully resent packet with seq_id: " << seq_id << std::endl;
+        success = true;
+      }
+    }
+
+    lock.unlock();
+
+    if (success) {
+      current_interval_ms = initial_interval_ms;
     }
   }
+}
 
-  // Reset timeout to blocking.
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 0;
-  if (setsockopt(_sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-    perror("setsockopt failed");
-    exit(EXIT_FAILURE);
+void StubbornLink::process_packet(const Packet& pkt) {
+//  std::cerr << "[DEBUG] Processing packet with seq_id: " << pkt.seq_id() << std::endl;
+  if (pkt.packet_type() == PacketType::ACK) {
+//    std::cerr << "[DEBUG] Received ACK for seq_id: " << pkt.seq_id() << " from " <<
+//              inet_ntoa(_peer_addr.sin_addr) << " " << ntohs(_peer_addr.sin_port) << std::endl;
+    std::lock_guard<std::mutex> lock(_unacked_mutex);
+    unacked_packets.erase(pkt.seq_id());
+//    std::cerr << "[DEBUG] Remaining unacked packets: " << unacked_packets.size() << std::endl;
+  } else {
+    // It is a data packet.
+    // Send an ACK.
+//    std::cerr << "[DEBUG] Sending ACK for seq_id : " << pkt.seq_id() << " to peer " <<
+//              inet_ntoa(_peer_addr.sin_addr) << " " << ntohs(_peer_addr.sin_port) << std::endl;
+    Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
+    auto pkt_serialized = ack_pkt.serialize();
+    _socket.send1(pkt_serialized);
+
+    // Deliver the data packet.
+    _deliver_cb(pkt.serialize());
   }
 }
 
-struct sockaddr_in StubbornLink::deliver(Message& m) {
-  struct sockaddr_in sender_addr;
-  socklen_t addr_len = sizeof(sender_addr);
-  ssize_t bytes_recv = recvfrom(_sockfd, m.data(), m.size(), 0,
-                                reinterpret_cast<struct sockaddr*>(&sender_addr),
-                                &addr_len);
-  std::cerr << "[DEBUG:SL-Deliver] Received message with seq_id: " << m.seq_id() << std::endl;
-  if (bytes_recv < 0) {
-    std::string err_msg = "recvfrom() failed. Error message: ";
-    err_msg += strerror(errno);
-    perror(err_msg.c_str());
-    exit(EXIT_FAILURE);
+void StubbornLink::send(const Packet& p) {
+  std::lock_guard<std::mutex> lock(_unacked_mutex);
+  unacked_packets[p.seq_id()] = p;
+  auto pkt_serialized = p.serialize();
+  ssize_t nsent = _socket.send1(pkt_serialized);
+  if (nsent == -1) {
+    if (errno == EWOULDBLOCK) {
+//      std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
+    }
+    else if (errno == ECONNREFUSED) {
+//      std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
+    }
   }
-
-  std::cerr << "[DEBUG:SL-Deliver] Sending ACK for seq_id: " << m.seq_id() << std::endl;
-
-  // Send ACK back to the sender.
-  Message ack(m.seq_id());
-  ssize_t bytes_sent = sendto(_sockfd, ack.data(), ack.size(), 0,
-                              reinterpret_cast<struct sockaddr*>(&sender_addr),
-                              addr_len);
-  if (bytes_sent < 0) {
-    std::string err_msg = "sendto() failed. Error message: ";
-    err_msg += strerror(errno);
-    perror(err_msg.c_str());
-    exit(EXIT_FAILURE);
-  }
-
-  return sender_addr;
 }
+
+//void StubbornLink::send(const Packet& p) {
+//  {
+//    std::lock_guard<std::mutex> lock(_unacked_mutex);
+//    unacked_packets[p.seq_id()] = p;
+//  }
+//  _send_cv.notify_one();  // Wake up the resend thread if it’s waiting
+//}
+
+//void StubbornLink::receive_ack(uint32_t seq_id) {
+//  std::lock_guard<std::mutex> lock(unacked_mutex);
+//  unacked_packets.erase(seq_id);  // Remove from unacked packets on ACK
+//}
+
+//void StubbornLink::write_event_handler(uint32_t events) {
+//  if (events & EPOLLOUT) {
+//    std::lock_guard<std::mutex> queue_lock(queue_mutex);
+//
+//    while (!resend_queue.empty()) {
+//      Packet pkt = resend_queue.front();
+//      auto pkt_serialized = pkt.serialize();
+//      ssize_t nsent = _socket.send1(pkt_serialized);
+//      if (nsent == -1) {
+//        if (errno == EWOULDBLOCK) {
+//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
+//          break;
+//        }
+//        else if (errno == ECONNREFUSED) {
+//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
+//          break;
+//        }
+//        else {
+//          std::string err_msg = "send() failed. Error message: ";
+//          err_msg += strerror(errno);
+//          perror(err_msg.c_str());
+//          exit(EXIT_FAILURE);
+//        }
+//      }
+//      resend_queue.pop();
+//      std::cerr << "[DEBUG] Resending packet with seq_id: " << pkt.seq_id() << std::endl;
+//    }
+//
+//    _event_loop.rearm(_out_fd, EPOLLOUT);
+//  }
+//}
+
+//void StubbornLink::write_event_handler(uint32_t events) {
+//  if (events & EPOLLOUT) {
+////    std::cerr << "[DEBUG] Received event for fd: " << _socket.sockfd() << std::endl;
+////    std::cerr << "[DEBUG] StubbornLink::write_event_handler: Writing data to socket." << std::endl;
+//    //  Data can be written.
+//    //  Send all unacked packets.
+//    std::lock_guard<std::mutex> lock(unacked_mutex);
+////    std::cerr << "[DEBUG] Sending unacked packets from " << inet_ntoa(_local_addr.sin_addr) << " " << ntohs(_local_addr.sin_port) << std::endl;
+//    for (const auto& [seq_id, pkt] : unacked_packets) {
+//      auto pkt_serialized = pkt.serialize();
+//      ssize_t nsent = _socket.send1(pkt_serialized);
+//      if (nsent == -1) {
+//        if (errno == EWOULDBLOCK) {
+//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
+//          break;
+//        }
+//        else if (errno == ECONNREFUSED) {
+//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
+//          break;
+//        }
+//        else {
+//          std::string err_msg = "send() failed. Error message: ";
+//          err_msg += strerror(errno);
+//          perror(err_msg.c_str());
+//          exit(EXIT_FAILURE);
+//        }
+//      }
+//    }
+//
+//    _event_loop.rearm(_out_fd, EPOLLOUT);
+//  }
+//}
+
+//void StubbornLink::enable_epollout() {
+//  _event_loop.modify(_out_fd, EPOLLOUT);
+//}
+//
+//void StubbornLink::disable_epollout() {
+//  _event_loop.modify(_out_fd, 0);
+//}
+
+//void StubbornLink::send(const Packet& p) {
+//  std::lock_guard<std::mutex> lock(unacked_mutex);
+//
+//  // Check if this is the first unacknowledged packet being added
+//  bool was_empty = unacked_packets.empty();
+//  unacked_packets[p.seq_id()] = p;
+//  auto pkt_serialized = p.serialize();
+//  _socket.send1(pkt_serialized);
+//
+//  // If it was empty, we need to enable EPOLLOUT to handle sending
+//  if (was_empty) {
+//    enable_epollout();
+//  }
+//}
+
+//bool StubbornLink::all_acked() {
+//  std::lock_guard<std::mutex> lock(unacked_mutex);
+//  return unacked_packets.empty();
+//}

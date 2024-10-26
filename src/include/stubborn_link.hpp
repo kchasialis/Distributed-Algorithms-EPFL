@@ -1,21 +1,57 @@
 #pragma once
 
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <arpa/inet.h>
-#include "message.hpp"
+#include <unordered_map>
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <atomic>
+#include "udp_socket.hpp"
+#include "packet.hpp"
+#include "event_loop.hpp"
+#include "parser.hpp"
+
+using DeliverCallback = std::function<void(const std::vector<uint8_t>& data)>;
 
 class StubbornLink {
-private:
-    int _sockfd;
-    struct sockaddr_in _addr{};
-
 public:
-    StubbornLink(in_addr_t addr, uint16_t port);
-    ~StubbornLink();
+  StubbornLink(in_addr_t addr, uint16_t port, in_addr_t paddr, uint16_t pport,
+               bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
+  ~StubbornLink();
 
-    int sockfd() const;
-    const struct sockaddr_in& addr() const;
-    void send(const Message& m, sockaddr_in& q_addr);
-    struct sockaddr_in deliver(Message& m);
+  void send(const Packet &p);
+
+private:
+  UDPSocket _socket;
+  int _in_fd;
+  int _out_fd;
+  bool _sender;
+  struct sockaddr_in _local_addr{};
+  struct sockaddr_in _peer_addr{};
+  EventLoop &_event_loop;
+  std::unordered_map<uint32_t, Packet> unacked_packets;
+  std::unordered_map<uint64_t, sockaddr_in> pid_addr_map;
+  // Receive callback.
+  DeliverCallback _deliver_cb;
+//    std::mutex pid_addr_map_mutex;
+
+  std::mutex _unacked_mutex;
+  std::queue<Packet> _resend_queue;
+  std::thread _resend_thread;
+//    std::condition_variable _send_cv;
+//    bool _stop_thread;
+  std::atomic<bool> _stop_thread;
+
+  void read_event_handler(uint32_t events);
+
+//  void write_event_handler(uint32_t events);
+
+  void process_packet(const Packet &pkt);
+
+  void resend_unacked_messages();
+//  void receive_ack(uint32_t seq_id);
+//  void enable_epollout();
+//  void disable_epollout();
 };
-

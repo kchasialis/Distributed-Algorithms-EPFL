@@ -2,36 +2,39 @@
 
 #include <memory>
 #include <unordered_map>
+#include "parser.hpp"
 #include "perfect_link.hpp"
-#include "message.hpp"
+#include "packet.hpp"
 #include "config.hpp"
+#include "event_loop.hpp"
+#include "thread_pool.hpp"
+
+constexpr uint32_t event_loop_workers = 5;
 
 class Process {
-private:
-  int _pid;
-  uint64_t _id;
-  std::unique_ptr<PerfectLink> _link;
-  bool _sender;
-  std::string _outfile;
-  std::unordered_map<uint64_t, struct sockaddr_in> pid_addr_map;
-
-  void run_sender(const Config& cfg);
-  void run_receiver(const Config& cfg);
-
 public:
-  Process(uint64_t id, in_addr_t addr, uint16_t port, bool sender,
-          std::string outfile, const std::vector<Parser::Host>& hosts);
-  Process(const Process&) = delete;
-  Process& operator=(const Process&) = delete;
-  Process(Process&&) = default;
-  Process& operator=(Process&&) = default;
-  ~Process() = default;
-  bool operator==(const Process& other) const;
-  int pid() const;
-  uint64_t id() const;
-  bool sender() const;
-  PerfectLink& link() const;
+  Process(uint64_t pid, in_addr_t addr, uint16_t port,
+          const std::vector<Parser::Host> &hosts, const Config& cfg,
+          const std::string& outfname);
+  ~Process();
+
+  uint64_t pid() const;
   void run(const Config& cfg);
-  bool write_output();
+  void stop();
+  EventLoop& event_loop();
+private:
+    uint64_t _pid;
+    in_addr_t _addr;
+    uint16_t _port;
+    EventLoop _event_loop;
+    ThreadPool *_thread_pool;
+    std::vector<Parser::Host> _hosts;
+    PerfectLink *_pl;
+    std::ofstream _outfile;
+
+    void run_sender(const Config& cfg);
+    void run_receiver(const Config& cfg);
+    static void sender_deliver_callback(const std::vector<uint8_t>& data);
+    void receiver_deliver_callback(const std::vector<uint8_t>& data);
 };
 

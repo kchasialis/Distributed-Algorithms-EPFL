@@ -1,51 +1,51 @@
 #include <cassert>
+#include <utility>
 #include "perfect_link.hpp"
+#include "packet.hpp"
 
-PerfectLink::PerfectLink(in_addr_t addr, uint16_t port,
-                         const std::vector<Parser::Host>& hosts) :
-        _sl(addr, port), _sent(), _delivered() {
+PerfectLink::PerfectLink(in_addr_t addr, uint16_t port, bool sender,
+                         const std::vector<Parser::Host>& hosts,
+                         EventLoop& event_loop, DeliverCallback deliver_cb) :
+                         _addr(addr), _port(port), _sender(sender) {
+  _deliver_cb = std::move(deliver_cb);
   for (const auto& host : hosts) {
-    struct sockaddr_in host_addr{};
-    host_addr.sin_family = AF_INET;
-    host_addr.sin_port = host.port;
-    host_addr.sin_addr.s_addr = host.ip;
-    addr_pid_map[host_addr] = host.id;
+    // Connect to all hosts.
+//    std::cerr << "[DEBUG] PerfectLink::PerfectLink: Connecting to host " << host.id << std::endl;
+    _sl_map[host.id] = new StubbornLink(addr, port, host.ip, host.port, sender, event_loop,
+                                        [this](const std::vector<uint8_t>& data) {
+    this->deliver_packet(data);
+    });
   }
 }
 
-int PerfectLink::sockfd() const {
-  return _sl.sockfd();
-}
-
-const struct sockaddr_in& PerfectLink::addr() const {
-  return _sl.addr();
-}
-
-const std::vector<Message>& PerfectLink::sent() const {
-  return _sent;
-}
-
-const std::unordered_set<DeliverMessage, DeliverMessageHash, DeliverMessageEqual>& PerfectLink::delivered() const {
-  return _delivered;
-}
-
-void PerfectLink::send(const Message& m, sockaddr_in& q_addr) {
-  _sl.send(m, q_addr);
-  _sent.push_back(m);
-}
-
-void PerfectLink::deliver() {
-  Message msg{};
-  auto sender_addr = _sl.deliver(msg);
-
-  assert(addr_pid_map.find(sender_addr) != addr_pid_map.end());
-
-  DeliverMessage dm{addr_pid_map[sender_addr], msg};
-
-  std::cerr << "[DEBUG-PL] Delivering message with id: " << msg.seq_id() << " from process: " << dm.pid << std::endl;
-
-  if (_delivered.find(dm) != _delivered.end()) {
-    return;
+PerfectLink::~PerfectLink() {
+  for (auto& sl : _sl_map) {
+    delete sl.second;
   }
-  _delivered.insert(dm);
 }
+
+void PerfectLink::deliver_packet(const std::vector<uint8_t>& data) {
+  if (!_sender) {
+    in_addr addr{};
+    addr.s_addr = _addr;
+    Packet packet;
+    packet.deserialize(data);
+    auto p = std::make_pair(packet.pid(), packet.seq_id());
+    if (_delivered.find(p) != _delivered.end()) {
+      return;
+    }
+    _delivered.insert(p);
+
+    _deliver_cb(data);
+  }
+}
+
+void PerfectLink::send(const Packet& p, uint64_t peer) {
+//  _sl->send(p, addr);
+  std::cerr << "[DEBUG] Sending to peer " << peer << std::endl;
+  _sl_map[peer]->send(p);
+}
+
+//bool PerfectLink::all_acked(uint64_t peer) {
+//  return _sl_map[peer]->all_acked();
+//}
