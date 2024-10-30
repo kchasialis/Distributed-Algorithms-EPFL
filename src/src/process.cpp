@@ -14,12 +14,14 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
         : _pid(pid), _addr(addr), _port(port), _hosts(hosts), _outfile(outfname) {
 
   if (cfg.receiver_proc() != _pid) {
-    _pl = new PerfectLink(_addr, _port, true, _hosts, _event_loop, [](const std::vector<uint8_t>& data) {
-        Process::sender_deliver_callback(data);
+    _pl = new PerfectLink(cfg.num_messages() * (_hosts.size() - 1), _addr, _port,
+                          true, _hosts, cfg.receiver_proc(), _event_loop, [](const Packet& pkt) {
+        Process::sender_deliver_callback(pkt);
     });
   } else {
-    _pl = new PerfectLink(_addr, _port, false, _hosts, _event_loop, [this](const std::vector<uint8_t>& data) {
-        this->receiver_deliver_callback(data);
+    _pl = new PerfectLink(cfg.num_messages() * (_hosts.size() - 1), _addr, _port,
+                          false, _hosts, cfg.receiver_proc(), _event_loop, [this](const Packet& pkt) {
+        this->receiver_deliver_callback(pkt);
     });
   }
 
@@ -54,15 +56,15 @@ void Process::run(const Config& cfg) {
 }
 
 void Process::stop() {
-//  std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
+  std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
 
-//  std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
+  std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
   _event_loop.stop();
-//  std::cerr << "[DEBUG] Stopping thread pool..." << std::endl;
+  std::cerr << "[DEBUG] Stopping thread pool..." << std::endl;
   _thread_pool->stop();
-//  std::cerr << "[DEBUG] Closing the file..." << std::endl;
+  std::cerr << "[DEBUG] Closing the file..." << std::endl;
   _outfile.close();
-//  std::cerr << "[DEBUG] Deleting the PerfectLink instance..." << std::endl;
+  std::cerr << "[DEBUG] Deleting the PerfectLink instance..." << std::endl;
 }
 
 EventLoop& Process::event_loop() {
@@ -93,27 +95,18 @@ void Process::run_sender(const Config& cfg) {
   }
 
   _event_loop.run();
-
-  std::cerr << "BYE LOL" << std::endl;
 }
 
 void Process::run_receiver(const Config& cfg) {
   assert (cfg.receiver_proc() == _pid);
 
   _event_loop.run();
-
-  std::cerr << "BYE LOL" << std::endl;
 }
 
-void Process::sender_deliver_callback(const std::vector<uint8_t>& data) {
-  (void) data;
+void Process::sender_deliver_callback(const Packet& pkt) {
+  (void) pkt;
 }
 
-void Process::receiver_deliver_callback(const std::vector<uint8_t>& data) {
-  // Deserialize the packet.
-  Packet packet;
-  packet.deserialize(data);
-
-  // Write to the output file.
-  _outfile << "d " << packet.pid() << " " << packet.seq_id() << "\n";
+void Process::receiver_deliver_callback(const Packet& pkt) {
+  _outfile << "d " << pkt.pid() << " " << pkt.seq_id() << "\n";
 }

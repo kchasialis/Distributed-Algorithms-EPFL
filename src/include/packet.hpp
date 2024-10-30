@@ -29,3 +29,16 @@ public:
     std::vector<uint8_t> serialize() const;
     void deserialize(const std::vector<uint8_t>& buffer);
 };
+
+struct PacketHash {
+    std::size_t operator()(const Packet& pkt) const {
+      std::hash<uint32_t> hash_seq_id;
+      return hash_seq_id(pkt.seq_id());
+    }
+};
+
+struct PacketEqual {
+    bool operator()(const Packet& lhs, const Packet& rhs) const {
+      return lhs.seq_id() == rhs.seq_id();
+    }
+};

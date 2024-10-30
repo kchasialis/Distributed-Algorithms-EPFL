@@ -34,7 +34,7 @@ private:
 
     void run_sender(const Config& cfg);
     void run_receiver(const Config& cfg);
-    static void sender_deliver_callback(const std::vector<uint8_t>& data);
-    void receiver_deliver_callback(const std::vector<uint8_t>& data);
+    static void sender_deliver_callback(const Packet& pkt);
+    void receiver_deliver_callback(const Packet& pkt);
 };
 

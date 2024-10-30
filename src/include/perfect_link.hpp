@@ -23,14 +23,16 @@ private:
   in_addr_t _addr;
   uint16_t _port;
   bool _sender;
+  size_t _n_messages;
+  std::mutex _delivered_mutex;
   std::unordered_set<delivered_t, PairHash> _delivered;
   DeliverCallback _deliver_cb;
   std::unordered_map<uint64_t, StubbornLink*> _sl_map;
 
-  void deliver_packet(const std::vector<uint8_t>& data);
+  void deliver_packet(const Packet& pkt);
 public:
-  PerfectLink(in_addr_t addr, uint16_t port, bool sender,
-              const std::vector<Parser::Host>& hosts,
+  PerfectLink(size_t n_messages, in_addr_t addr, uint16_t port, bool sender,
+              const std::vector<Parser::Host>& hosts, uint64_t receiver_proc,
               EventLoop& event_loop, DeliverCallback deliver_cb);
   ~PerfectLink();
 

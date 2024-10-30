@@ -3,17 +3,17 @@
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
-#include <unordered_map>
 #include <thread>
 #include <mutex>
 #include <queue>
 #include <atomic>
+#include <unordered_set>
 #include "udp_socket.hpp"
 #include "packet.hpp"
 #include "event_loop.hpp"
 #include "parser.hpp"
 
-using DeliverCallback = std::function<void(const std::vector<uint8_t>& data)>;
+using DeliverCallback = std::function<void(const Packet& pkt)>;
 
 class StubbornLink {
 public:
@@ -25,15 +25,14 @@ public:
 
 private:
   UDPSocket _socket;
-  int _in_fd;
-  int _out_fd;
   bool _sender;
-  struct sockaddr_in _local_addr{};
-  struct sockaddr_in _peer_addr{};
+//  struct sockaddr_in _local_addr{};
+//  struct sockaddr_in _peer_addr{};
   EventLoop &_event_loop;
-  std::unordered_map<uint32_t, Packet> unacked_packets;
-  std::unordered_map<uint64_t, sockaddr_in> pid_addr_map;
+  std::unordered_set<Packet, PacketHash, PacketEqual> unacked_packets;
   // Receive callback.
+  std::mutex _interval_mutex;
+  std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
 //    std::mutex pid_addr_map_mutex;
 

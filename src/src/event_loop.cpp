@@ -36,7 +36,7 @@ EventLoop::EventLoop() : _running(true) {
 }
 
 EventLoop::~EventLoop() {
-  std::cerr << "[DEBUG] EventLoop destructor..." << std::endl;
+//  std::cerr << "[DEBUG] EventLoop destructor..." << std::endl;
   close(_exit_loop_fd);
   close(_epoll_fd);
 }
@@ -75,10 +75,10 @@ void EventLoop::rearm(int fd, uint32_t event) const {
 }
 
 void EventLoop::run() {
-  std::cerr << "[DEBUG] Running event loop, thread_id: " << gettid() << std::endl;
+//  std::cerr << "[DEBUG] Running event loop, thread_id: " << gettid() << std::endl;
   struct epoll_event events[MAX_EVENTS];
   while (_running) {
-    std::cerr << "[DEBUG] About to block on epoll_wait, thread_id:" << gettid() << std::endl;
+//    std::cerr << "[DEBUG] About to block on epoll_wait, thread_id:" << gettid() << std::endl;
     int nfds = epoll_wait(_epoll_fd, events, MAX_EVENTS, -1);
 //    std::cerr << "WE HAVE EVENTS!" << std::endl;
     if (nfds == -1) {
@@ -107,7 +107,10 @@ void EventLoop::run() {
         std::cerr << "[DEBUG] Received exit signal. " << gettid() << std::endl;
         uint64_t u;
         // Read to clear the read buffer.
-        read(_exit_loop_fd, &u, sizeof(u));
+        if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
+          perror("read from wakeup_fd failed");
+          exit(EXIT_FAILURE);
+        }
 //        if (!_running) {
 //          std::cerr << "[DEBUG1] Exiting event loop. " << gettid() << std::endl;
 //          return;
@@ -119,6 +122,7 @@ void EventLoop::run() {
         if (write(_exit_loop_fd, &u, sizeof(u)) == -1) {
           perror("write to wakeup_fd failed");
         }
+        std::cerr << "[DEBUG] Writing exit signal. " << gettid() << std::endl;
         continue;
       }
 
@@ -130,17 +134,18 @@ void EventLoop::run() {
     }
   }
 
-  std::cerr << "[DEBUG2] Exiting event loop. " << gettid() << std::endl;
+//  std::cerr << "[DEBUG2] Exiting event loop. " << gettid() << std::endl;
 }
 
 void EventLoop::stop() {
-//  std::cerr << "[DEBUG] Stopping event loop... thread_id: " << gettid() << std::endl;
+  std::cerr << "[DEBUG] Stopping event loop... thread_id: " << gettid() << std::endl;
   _running = false;
 
   // Write to wakeup file descriptor to unblock epoll_wait
   uint64_t u = 1;
   if (write(_exit_loop_fd, &u, sizeof(u)) == -1) {
     perror("write to wakeup_fd failed");
+    exit(EXIT_FAILURE);
   }
 }
 
