@@ -3,8 +3,6 @@
 #include <unistd.h>
 #include <cassert>
 #include <sys/eventfd.h>
-#include <cstring>
-#include <asm-generic/socket.h>
 #include <sys/socket.h>
 #include "event_loop.hpp"
 
@@ -36,7 +34,6 @@ EventLoop::EventLoop() : _running(true) {
 }
 
 EventLoop::~EventLoop() {
-//  std::cerr << "[DEBUG] EventLoop destructor..." << std::endl;
   close(_exit_loop_fd);
   close(_epoll_fd);
 }
@@ -51,8 +48,10 @@ void EventLoop::add(int fd, uint32_t events, std::function<void(uint32_t)> handl
     exit(EXIT_FAILURE);
   }
 
-  std::unique_lock lock(_handlers_mutex);
-  _handlers[fd] = std::move(handler);
+  {
+    std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
+    _handlers[fd] = std::move(handler);
+  }
 }
 
 /* From the epoll manual:
@@ -75,12 +74,9 @@ void EventLoop::rearm(int fd, uint32_t event) const {
 }
 
 void EventLoop::run() {
-//  std::cerr << "[DEBUG] Running event loop, thread_id: " << gettid() << std::endl;
   struct epoll_event events[MAX_EVENTS];
   while (_running) {
-//    std::cerr << "[DEBUG] About to block on epoll_wait, thread_id:" << gettid() << std::endl;
     int nfds = epoll_wait(_epoll_fd, events, MAX_EVENTS, -1);
-//    std::cerr << "WE HAVE EVENTS!" << std::endl;
     if (nfds == -1) {
       if (errno == EINTR) {
         // Received interrupt signal, continue waiting until stop is called.
@@ -104,17 +100,14 @@ void EventLoop::run() {
       }
 
       if ((events[i].events & EPOLLIN) && events[i].data.fd == _exit_loop_fd) {
-        std::cerr << "[DEBUG] Received exit signal. " << gettid() << std::endl;
+        std::cerr << "[DEBUG] Received exit signal. " << std::endl;
         uint64_t u;
         // Read to clear the read buffer.
         if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
-          perror("read from wakeup_fd failed");
-          exit(EXIT_FAILURE);
+          break;
+//          perror("read from wakeup_fd failed");
+//          exit(EXIT_FAILURE);
         }
-//        if (!_running) {
-//          std::cerr << "[DEBUG1] Exiting event loop. " << gettid() << std::endl;
-//          return;
-//        }
         rearm(_exit_loop_fd, EPOLLIN);
 
         // Write to wakeup file descriptor to unblock epoll_wait
@@ -122,23 +115,21 @@ void EventLoop::run() {
         if (write(_exit_loop_fd, &u, sizeof(u)) == -1) {
           perror("write to wakeup_fd failed");
         }
-        std::cerr << "[DEBUG] Writing exit signal. " << gettid() << std::endl;
+        std::cerr << "[DEBUG] Writing exit signal. " << std::endl;
         continue;
       }
 
-      // Shared lock. Does not block other readers.
-      std::shared_lock lock(_handlers_mutex);
-      auto it = _handlers.find(events[i].data.fd);
-      assert(it != _handlers.end() && "Handler not found!");
-      it->second(events[i].events);
+      {
+        std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
+        auto it = _handlers.find(events[i].data.fd);
+        assert(it != _handlers.end() && "Handler not found!");
+        it->second(events[i].events);
+      }
     }
   }
-
-//  std::cerr << "[DEBUG2] Exiting event loop. " << gettid() << std::endl;
 }
 
 void EventLoop::stop() {
-  std::cerr << "[DEBUG] Stopping event loop... thread_id: " << gettid() << std::endl;
   _running = false;
 
   // Write to wakeup file descriptor to unblock epoll_wait
@@ -148,15 +139,3 @@ void EventLoop::stop() {
     exit(EXIT_FAILURE);
   }
 }
-
-//void EventLoop::modify(int fd, uint32_t events) {
-//  struct epoll_event ev{};
-//  ev.events = events;
-//  ev.data.fd = fd;
-//
-//  // EPOLL_CTL_MOD to modify the existing registration
-//  if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
-//    perror("epoll_ctl MOD failed");
-//    exit(EXIT_FAILURE);
-//  }
-//}

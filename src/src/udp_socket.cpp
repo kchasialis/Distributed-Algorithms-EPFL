@@ -1,7 +1,7 @@
 #include <string>
 #include <cstring>
 #include <unistd.h>
-#include <iostream>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "udp_socket.hpp"
@@ -47,6 +47,33 @@ UDPSocket::~UDPSocket() {
   close(_infd);
 }
 
+void UDPSocket::set_blocking_socket(bool blocking, int fd) {
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1) {
+    perror("fcntl F_GETFL failed");
+    exit(EXIT_FAILURE);
+  }
+
+  if (blocking) {
+    flags &= ~O_NONBLOCK;
+  } else {
+    flags |= O_NONBLOCK;
+  }
+
+  if (fcntl(fd, F_SETFL, flags) == -1) {
+    perror("fcntl F_SETFL failed");
+    exit(EXIT_FAILURE);
+  }
+}
+
+void UDPSocket::set_blocking_input(bool blocking) const {
+  set_blocking_socket(blocking, _infd);
+}
+
+void UDPSocket::set_blocking_output(bool blocking) const {
+  set_blocking_socket(blocking, _outfd);
+}
+
 int UDPSocket::infd() const {
   return _infd;
 }
@@ -56,9 +83,7 @@ int UDPSocket::outfd() const {
 }
 
 void UDPSocket::conn(const struct sockaddr_in& addr) {
-//  std::cerr << "[DEBUG] Connecting to " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port) << std::endl;
   if (connect(_outfd, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-    std::cerr << "[DEBUG] Connection failed." << std::endl;
     perror("connect failed");
     exit(EXIT_FAILURE);
   }

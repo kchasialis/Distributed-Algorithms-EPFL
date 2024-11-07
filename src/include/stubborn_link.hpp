@@ -8,6 +8,8 @@
 #include <queue>
 #include <atomic>
 #include <unordered_set>
+#include <condition_variable>
+#include <random>
 #include "udp_socket.hpp"
 #include "packet.hpp"
 #include "event_loop.hpp"
@@ -17,40 +19,42 @@ using DeliverCallback = std::function<void(const Packet& pkt)>;
 
 class StubbornLink {
 public:
-  StubbornLink(in_addr_t addr, uint16_t port, in_addr_t paddr, uint16_t pport,
+  StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
+               in_addr_t paddr, uint16_t pport,
                bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
-  ~StubbornLink();
+//  ~StubbornLink();
 
-  void send(const Packet &p);
-
+  void send(uint32_t n_messages, std::ofstream &outfile);
+  bool send_syn_packet();
+  void stop();
 private:
   UDPSocket _socket;
   bool _sender;
-//  struct sockaddr_in _local_addr{};
-//  struct sockaddr_in _peer_addr{};
   EventLoop &_event_loop;
   std::unordered_set<Packet, PacketHash, PacketEqual> unacked_packets;
-  // Receive callback.
   std::mutex _interval_mutex;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
-//    std::mutex pid_addr_map_mutex;
+  uint64_t _pid;
 
+  std::condition_variable _syn_received_cv;
+  std::mutex _syn_mutex;
+  std::atomic<bool> _syn_received{false};
   std::mutex _unacked_mutex;
   std::queue<Packet> _resend_queue;
   std::thread _resend_thread;
-//    std::condition_variable _send_cv;
-//    bool _stop_thread;
-  std::atomic<bool> _stop_thread;
+  std::thread _syn_resend_thread;
+  std::atomic<bool> _stop;
+  std::atomic<bool> _syn_ack_received{false};
+  std::atomic<bool> _ack_received;
+  std::default_random_engine _random_engine{std::random_device{}()};
 
   void read_event_handler(uint32_t events);
 
-//  void write_event_handler(uint32_t events);
-
   void process_packet(const Packet &pkt);
 
-  void resend_unacked_messages();
-//  void receive_ack(uint32_t seq_id);
-//  void enable_epollout();
-//  void disable_epollout();
+//  void resend_syn_packet();
+//
+//  void resend_unacked_packets();
+  int backoff_interval(int timeout);
 };

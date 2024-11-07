@@ -3,13 +3,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <vector>
 
 enum class PacketType {
     DATA,
     ACK,
+    SYN,
 };
 
-constexpr static size_t HEADER_SIZE = sizeof(int) + sizeof(PacketType) + sizeof(uint32_t) + sizeof(uint32_t);
+constexpr static size_t HEADER_SIZE = sizeof(uint64_t) + sizeof(PacketType) + sizeof(uint32_t) + sizeof(uint32_t);
 
 class Packet {
 private:

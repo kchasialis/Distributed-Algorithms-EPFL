@@ -7,16 +7,22 @@
 #include "parser.hpp"
 #include "process.hpp"
 
+std::mutex signal_handler_mutex;
 std::function<void()> signal_handler;
-
-std::atomic<bool> stop_requested{false};
 
 static void stop(int) {
   // reset signal handlers to default
   signal(SIGTERM, SIG_DFL);
   signal(SIGINT, SIG_DFL);
 
-  stop_requested = true;
+//  signal_handler();
+
+//  {
+//    std::lock_guard<std::mutex> lock(signal_handler_mutex);
+//    if (signal_handler) {
+//      signal_handler();
+//    }
+//  }
   signal_handler();
 
 //  std::cerr << "Stop requested" << std::endl;
@@ -65,8 +71,12 @@ static int run_process(Parser &parser, const Config& cfg) {
   Process process(parser.id(), current_host.ip, current_host.port,
                   parser.hosts(), cfg, parser.outputPath());
 
-//  signal_handler = [&process]() { process.stop(); };
-  signal_handler = [&process]() { process.event_loop().stop(); };
+//  {
+//    std::lock_guard<std::mutex> lock(signal_handler_mutex);
+//    signal_handler = [&process]() { process.stop(); };
+//  }
+
+  signal_handler = [&process]() { process.stop(); };
 
   std::cerr << "I am process with id: " << process.pid() << std::endl;
 
@@ -99,8 +109,8 @@ int main(int argc, char **argv) {
   // Call with `false` if no config file is necessary.
   bool requireConfig = true;
 
-  // After a process finishes broadcasting,
-  // it waits forever for the delivery of messages.
+//   After a process finishes broadcasting,
+//   it waits forever for the delivery of messages.
 //  while (true) {
 //    std::this_thread::sleep_for(std::chrono::hours(1));
 //  }

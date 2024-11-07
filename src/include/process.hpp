@@ -9,7 +9,7 @@
 #include "event_loop.hpp"
 #include "thread_pool.hpp"
 
-constexpr uint32_t event_loop_workers = 5;
+constexpr uint32_t event_loop_workers = 10;
 
 class Process {
 public:
@@ -31,6 +31,7 @@ private:
     std::vector<Parser::Host> _hosts;
     PerfectLink *_pl;
     std::ofstream _outfile;
+    size_t _n_messages;
 
     void run_sender(const Config& cfg);
     void run_receiver(const Config& cfg);

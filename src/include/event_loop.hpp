@@ -3,7 +3,7 @@
 #include <sys/epoll.h>
 #include <unordered_map>
 #include <functional>
-#include <shared_mutex>
+#include <mutex>
 #include <atomic>
 
 #define MAX_EVENTS 100
@@ -14,7 +14,7 @@ private:
     int _exit_loop_fd;
     std::atomic<bool> _running;
     std::unordered_map<int, std::function<void(uint32_t)>> _handlers;
-    std::shared_mutex _handlers_mutex;
+    std::mutex _handlers_mutex;
 
 public:
     EventLoop();

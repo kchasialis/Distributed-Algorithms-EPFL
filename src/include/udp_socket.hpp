@@ -10,10 +10,14 @@ class UDPSocket {
 private:
     int _infd;
     int _outfd;
+
+    static void set_blocking_socket(bool blocking, int fd);
 public:
     UDPSocket(in_addr_t addr, uint16_t port);
     ~UDPSocket();
 
+    void set_blocking_input(bool blocking) const;
+    void set_blocking_output(bool blocking) const;
     int infd() const;
     int outfd() const;
     void conn(const struct sockaddr_in& addr);

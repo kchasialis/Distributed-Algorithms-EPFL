@@ -10,22 +10,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 string(CONCAT CMAKE_CXX_FLAGS_COMMON_STR ""
-                        "-Werror -Wall -Wconversion -Wfloat-equal "
-                        "-Wpedantic -Wpointer-arith -Wswitch-default "
-                        "-Wpacked -Wextra -Winvalid-pch "
-                        "-Wmissing-field-initializers "
-                        "-Wunreachable-code -Wcast-align -Wcast-qual "
-                        "-Wdisabled-optimization -Wformat=2 "
-                        "-Wformat-nonliteral -Wuninitialized "
-                        "-Wformat-security -Wformat-y2k -Winit-self "
-                        "-Wmissing-declarations -Wmissing-include-dirs "
-                        "-Wredundant-decls -Wstrict-overflow=5 -Wundef "
-                        "-Wno-unused -Wctor-dtor-privacy -Wsign-promo "
-                        "-Woverloaded-virtual -Wold-style-cast")
+        "-Werror -Wall -Wconversion -Wfloat-equal "
+        "-Wpedantic -Wpointer-arith -Wswitch-default "
+        "-Wpacked -Wextra -Winvalid-pch "
+        "-Wmissing-field-initializers "
+        "-Wunreachable-code -Wcast-align -Wcast-qual "
+        "-Wdisabled-optimization -Wformat=2 "
+        "-Wformat-nonliteral -Wuninitialized "
+        "-Wformat-security -Wformat-y2k -Winit-self "
+        "-Wmissing-declarations -Wmissing-include-dirs "
+        "-Wredundant-decls -Wstrict-overflow=5 -Wundef "
+        "-Wno-unused -Wctor-dtor-privacy -Wsign-promo "
+        "-Woverloaded-virtual -Wold-style-cast")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     string(CONCAT CMAKE_CXX_FLAGS_STR "${CMAKE_CXX_FLAGS_COMMON_STR} "
-                        "-Wlogical-op -Wstrict-null-sentinel -Wnoexcept")
+            "-Wlogical-op -Wstrict-null-sentinel -Wnoexcept")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_STR}")
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     string(CONCAT CMAKE_CXX_FLAGS_STR "${CMAKE_CXX_FLAGS_COMMON_STR} ")
@@ -33,20 +33,20 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 string(CONCAT CMAKE_C_FLAGS_COMMON_STR ""
-                        "-Werror -Wall -Wconversion -Wfloat-equal "
-                        "-Wpedantic -Wpointer-arith -Wswitch-default "
-                        "-Wpacked -Wextra -Winvalid-pch "
-                        "-Wmissing-field-initializers -Wunreachable-code "
-                        "-Wcast-align -Wcast-qual -Wdisabled-optimization "
-                        "-Wformat=2 -Wformat-nonliteral -Wuninitialized "
-                        "-Wformat-security -Wformat-y2k -Winit-self "
-                        "-Wmissing-declarations -Wmissing-include-dirs "
-                        "-Wredundant-decls -Wstrict-overflow=5 "
-                        "-Wundef -Wno-unused")
+        "-Werror -Wall -Wconversion -Wfloat-equal "
+        "-Wpedantic -Wpointer-arith -Wswitch-default "
+        "-Wpacked -Wextra -Winvalid-pch "
+        "-Wmissing-field-initializers -Wunreachable-code "
+        "-Wcast-align -Wcast-qual -Wdisabled-optimization "
+        "-Wformat=2 -Wformat-nonliteral -Wuninitialized "
+        "-Wformat-security -Wformat-y2k -Winit-self "
+        "-Wmissing-declarations -Wmissing-include-dirs "
+        "-Wredundant-decls -Wstrict-overflow=5 "
+        "-Wundef -Wno-unused")
 
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     string(CONCAT CMAKE_C_FLAGS_STR "${CMAKE_C_FLAGS_COMMON_STR} "
-                        "-Wlogical-op")
+            "-Wlogical-op")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS_STR}")
 elseif (CMAKE_C_COMPILER_ID MATCHES "Clang")
     string(CONCAT CMAKE_C_FLAGS_STR "${CMAKE_C_FLAGS_COMMON_STR} ")

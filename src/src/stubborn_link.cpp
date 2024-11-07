@@ -3,20 +3,17 @@
 #include <cstring>
 #include <cstdio>
 #include <utility>
+#include <cassert>
+//#include <random>
 #include "stubborn_link.hpp"
 
-StubbornLink::StubbornLink(in_addr_t addr, uint16_t port, in_addr_t paddr, uint16_t pport,
+StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
+                           in_addr_t paddr, uint16_t pport,
                            bool sender, EventLoop& event_loop, DeliverCallback deliver_cb) :
                            _socket(addr, port), _sender(sender), _event_loop(event_loop),
-                           _deliver_cb(std::move(deliver_cb)), _stop_thread(false) {
+                           _deliver_cb(std::move(deliver_cb)), _pid(pid), _stop(false),
+                           _ack_received(false) {
 
-//  _local_addr.sin_family = AF_INET;
-//  _local_addr.sin_port = port;
-//  _local_addr.sin_addr.s_addr = addr;
-//
-//  _peer_addr.sin_family = AF_INET;
-//  _peer_addr.sin_port = pport;
-//  _peer_addr.sin_addr.s_addr = paddr;
   struct sockaddr_in peer_addr{};
   peer_addr.sin_family = AF_INET;
   peer_addr.sin_port = pport;
@@ -26,49 +23,48 @@ StubbornLink::StubbornLink(in_addr_t addr, uint16_t port, in_addr_t paddr, uint1
   event_loop.add(_socket.infd(), EPOLLIN, [this](uint32_t events) {
       read_event_handler(events);
   });
+//  _socket.set_blocking_output(true);
 
-  if (_sender) {
-    _resend_thread = std::thread(&StubbornLink::resend_unacked_messages, this);
-  }
+//  if (_sender) {
+//    _resend_thread = std::thread(&StubbornLink::resend_unacked_packets, this);
+//  } else {
+//    _resend_thread = std::thread(&StubbornLink::resend_syn_packet, this);
+//  }
+//  if (!_sender) {
+//    _resend_thread = std::thread(&StubbornLink::resend_syn_packet, this);
+//  }
 }
 
-StubbornLink::~StubbornLink() {
-//  std::cerr << "[DEBUG] StubbornLink::~StubbornLink: Destructing StubbornLink." << std::endl;
+//  _stop_thread.store(true);
 //  if (_sender) {
-//    _stop_thread = true;
+//    // Notify the resend thread to wake up early and stop
+//    _resend_cv.notify_all();
+//  }
+//
+//  if (_resend_thread.joinable()) {
+//    _resend_thread.join();
+//  }
+//  std::cerr << "[DEBUG] Destroying stubborn link!" << std::endl;
+//  _stop_thread.store(true);
+//  if (!_sender) {
 //    if (_resend_thread.joinable()) {
 //      _resend_thread.join();
 //    }
 //  }
-  if (_sender) {
-    _stop_thread.store(true);
-
-    // Notify the resend thread to wake up early and stop
-    _resend_cv.notify_all();
-
-    if (_resend_thread.joinable()) {
-      _resend_thread.join();
-    }
-  }
-}
 
 void StubbornLink::read_event_handler(uint32_t events) {
   if (events & EPOLLIN) {
-//    std::cerr << "[DEBUG] StubbornLink::read_event_handler: Data is available to read. " <<
-//    inet_ntoa(_local_addr.sin_addr) << " " << ntohs(_local_addr.sin_port) << std::endl;
-
     // Data is available to read.
     std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
     while (true) {
-//      ssize_t nrecv = _socket.receive(buffer);
+      buffer.resize(RECV_BUF_SIZE);
       ssize_t nrecv = _socket.recv_buf(buffer);
-//      ssize_t nrecv = recv(_in_fd, buffer.data(), buffer.size(), 0);
       if (nrecv == -1) {
         if (errno == EWOULDBLOCK) {
           // No more data to read.
           break;
         }
-        std::string err_msg = "read() failed. Error message: ";
+        std::string err_msg = "recv() failed. Error message: ";
         err_msg += strerror(errno);
         perror(err_msg.c_str());
         exit(EXIT_FAILURE);
@@ -78,7 +74,6 @@ void StubbornLink::read_event_handler(uint32_t events) {
       }
       // Process the received data.
       Packet pkt;
-//      std::cerr << "[DEBUG] Read " << nrecv << " bytes from socket." << std::endl;
       buffer.resize(static_cast<size_t>(nrecv));
       pkt.deserialize(buffer);
       process_packet(pkt);
@@ -87,207 +82,245 @@ void StubbornLink::read_event_handler(uint32_t events) {
   }
 }
 
-void StubbornLink::resend_unacked_messages() {
-  const int initial_interval_ms = 1000;
-  const int max_interval_ms = 16000;
+void StubbornLink::process_packet(const Packet& pkt) {
+  switch (pkt.packet_type()) {
+    case PacketType::SYN:
+    {
+      std::cerr << "[DEBUG] Received SYN packet from receiver!" << std::endl;
+      assert(_sender);
+      // Notify that SYN has been received
+      {
+        std::lock_guard<std::mutex> lock(_syn_mutex);
+        _syn_received.store(true);
+      }
+      _syn_received_cv.notify_all();
+      // Send a SYN_ACK.
+      std::cerr << "[DEBUG] Sending SYNACK packet to receiver!" << std::endl;
+      assert(pkt.seq_id() == 0);
+      Packet ack_pkt(_pid, PacketType::ACK, pkt.seq_id());
+      _socket.send_buf(ack_pkt.serialize());
+      break;
+    }
+    case PacketType::ACK:
+    {
+      if (pkt.seq_id() == 0) {
+        std::cerr << "[DEBUG] Received SYNACK packet from sender!" << std::endl;
+        _syn_ack_received.store(true);
+      } else {
+        std::lock_guard<std::mutex> lock(_unacked_mutex);
+        unacked_packets.erase(pkt);
+        _ack_received.store(true);
+      }
+      break;
+    }
+    case PacketType::DATA:
+    {
+      // It is a data packet.
+      // Send an ACK.
+      Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
+      _socket.send_buf(ack_pkt.serialize());
+
+      // Deliver the data packet.
+      _deliver_cb(pkt);
+      break;
+    }
+    default:
+      std::cerr << "Unknown packet type: " << static_cast<int>(pkt.packet_type()) << std::endl;
+      break;
+  }
+}
+
+void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile) {
+//  std::lock_guard<std::mutex> lock(_unacked_mutex);
+//  unacked_packets.insert(pkt);
+  {
+    std::lock_guard<std::mutex> lock(_unacked_mutex);
+    uint32_t current_seq_id = 1;
+    for (uint32_t i = 0; i < n_messages; i += 8) {
+      uint32_t packet_size = std::min(8U, n_messages - i);
+      std::vector<uint8_t> data(packet_size * sizeof(uint32_t));
+      for (uint32_t j = 0; j < packet_size; j++) {
+        std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id,
+                    sizeof(uint32_t));
+        outfile << "b " << current_seq_id << "\n";
+        current_seq_id++;
+      }
+
+      Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
+      unacked_packets.insert(p);
+    }
+  }
+
+  const int initial_interval_ms = 100;
+  const int max_interval_ms = 5000;
 
   int current_interval_ms = initial_interval_ms;
+  uint32_t initial_window_size = 1000;
+  uint32_t window_size = initial_window_size;
 
-//  while (!_stop_thread.load()) {
-//    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
+  std::cerr << "[DEBUG] Waiting for SYN packet from receiver..." << std::endl;
+  {
+    std::unique_lock<std::mutex> syn_lock(_syn_mutex);
+    _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
+  }
+  std::cerr << "[DEBUG] Unblocked! Sending packets..." << std::endl;
+
   while (true) {
-    std::unique_lock<std::mutex> interval_lock(_interval_mutex);
-    // Wait for either the timeout or for a signal to stop the thread
-    _resend_cv.wait_for(interval_lock, std::chrono::milliseconds(current_interval_ms), [this] {
-        return _stop_thread.load();
-    });
+//    std::unique_lock<std::mutex> interval_lock(_interval_mutex);
+//     Wait for either the timeout or for a signal to stop the thread
+//    _resend_cv.wait_for(interval_lock, std::chrono::milliseconds(current_interval_ms), [this] {
+//        return _stop_thread.load();
+//    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
 
-    if (_stop_thread.load()) {
+    if (_stop.load()) {
       break;
     }
 
     std::unique_lock<std::mutex> lock(_unacked_mutex);
+    if (unacked_packets.empty()) {
+      break;
+    }
 
-    bool success = false;
-//    uint32_t packets_sent = 0;
-//    std::cerr << "[DEBUG] Resending packets... thread_id: " << gettid() << std::endl;
+    uint32_t packets_sent = 0;
     for (const auto& pkt : unacked_packets) {
-//      if (packets_sent >= _window_size) {
-//        break;
-//      }
+      if (packets_sent >= window_size) {
+        window_size = initial_window_size;
+        current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+        break;
+      }
 
-//      std::cerr << "[DEBUG] Resending packet with seq_id: " << seq_id << std::endl;
       auto pkt_serialized = pkt.serialize();
 
-//      ssize_t nsent = _socket.send1(pkt_serialized);
       ssize_t nsent = _socket.send_buf(pkt_serialized);
       if (nsent == -1) {
         if (errno == ECONNREFUSED) {
-//          std::cerr << "[DEBUG] Connection refused. Increasing time interval." << std::endl;
-          current_interval_ms = std::min(current_interval_ms * 2, max_interval_ms);
+          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
         } else if (errno == EWOULDBLOCK) {
-//          std::cerr << "[DEBUG] send() would block, retrying for packet seq_id: " << seq_id << std::endl;
+          // Buffer is full. Reduce window size.
+          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+          window_size /= 2;
+          break;
         } else {
           perror("send failed");
         }
       } else {
-//        std::cerr << "[DEBUG] Successfully resent packet with seq_id: " << seq_id << std::endl;
-        success = true;
-//          packets_sent++;
+        packets_sent++;
       }
     }
-
     lock.unlock();
+  }
+}
 
-    if (success) {
-      current_interval_ms = initial_interval_ms;
-    }
+bool StubbornLink::send_syn_packet() {
+  if (_syn_ack_received.load()) {
+    return false;
+  }
+  Packet syn_pkt(_pid, PacketType::SYN, 0);
+  _socket.send_buf(syn_pkt.serialize());
 
-//    if (packets_sent > 0) {
-//      current_interval_ms = initial_interval_ms;
+  return true;
+}
+
+void StubbornLink::stop() {
+  std::cerr << "Stopping stubborn link..." << std::endl;
+  _stop.store(true);
+  // Notify that SYN has been received
+  {
+    std::lock_guard<std::mutex> lock(_syn_mutex);
+    _syn_received.store(true);
+  }
+  _syn_received_cv.notify_all();
+}
+
+//void StubbornLink::resend_syn_packet() {
+//  const int interval_ms = 500;
+//
+//  while (true) {
+//    std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+//
+//    if (_stop_thread.load()) {
+//      std::cerr << "Stopping SYN resend thread..." << std::endl;
+//      break;
 //    }
-  }
-}
+//
+//    Packet syn_pkt(_pid, PacketType::SYN, 0);
+//    _socket.send_buf(syn_pkt.serialize());
+//  }
+//}
 
-void StubbornLink::process_packet(const Packet& pkt) {
-//  std::cerr << "[DEBUG] Processing packet with seq_id: " << pkt.seq_id() << std::endl;
-  if (pkt.packet_type() == PacketType::ACK) {
-//    std::cerr << "[DEBUG] Received ACK for seq_id: " << pkt.seq_id() << " from " <<
-//              inet_ntoa(_peer_addr.sin_addr) << " " << ntohs(_peer_addr.sin_port) << std::endl;
-    std::lock_guard<std::mutex> lock(_unacked_mutex);
-    unacked_packets.erase(pkt);
-//    std::cerr << "[DEBUG] Remaining unacked packets: " << unacked_packets.size() << std::endl;
-  } else {
-    // It is a data packet.
-    // Send an ACK.
-//    std::cerr << "[DEBUG] Sending ACK for seq_id : " << pkt.seq_id() << " to peer " <<
-//              inet_ntoa(_peer_addr.sin_addr) << " " << ntohs(_peer_addr.sin_port) << std::endl;
-    Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
-    _socket.send_buf(ack_pkt.serialize());
-//    _socket.send1(pkt_serialized);
-
-    // Deliver the data packet.
-    _deliver_cb(pkt);
-  }
-}
-
-void StubbornLink::send(const Packet& pkt) {
-  std::lock_guard<std::mutex> lock(_unacked_mutex);
-  unacked_packets.insert(pkt);
-//  ssize_t nsent = _socket.send1(pkt_serialized);
-  ssize_t nsent = _socket.send_buf(pkt.serialize());
-  if (nsent == -1) {
-    if (errno == EWOULDBLOCK) {
-//      std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
-    }
-    else if (errno == ECONNREFUSED) {
-//      std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
-    }
-  }
-}
-
-//void StubbornLink::send(const Packet& p) {
+//void StubbornLink::resend_unacked_packets() {
+//  const int initial_interval_ms = 100;
+//  const int max_interval_ms = 5000;
+//
+//  int current_interval_ms = initial_interval_ms;
+//  uint32_t initial_window_size = 1000;
+//  uint32_t window_size = initial_window_size;
+//
+//  // Wait for a SYN packet to be received from the receiver.
 //  {
-//    std::lock_guard<std::mutex> lock(_unacked_mutex);
-//    unacked_packets[p.seq_id()] = p;
+//    std::unique_lock<std::mutex> syn_lock(_syn_mutex);
+//    _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
 //  }
-//  _send_cv.notify_one();  // Wake up the resend thread if it’s waiting
-//}
-
-//void StubbornLink::receive_ack(uint32_t seq_id) {
-//  std::lock_guard<std::mutex> lock(unacked_mutex);
-//  unacked_packets.erase(seq_id);  // Remove from unacked packets on ACK
-//}
-
-//void StubbornLink::write_event_handler(uint32_t events) {
-//  if (events & EPOLLOUT) {
-//    std::lock_guard<std::mutex> queue_lock(queue_mutex);
+//  std::cerr << "[DEBUG] Unblocked! Sending packets..." << std::endl;
 //
-//    while (!resend_queue.empty()) {
-//      Packet pkt = resend_queue.front();
-//      auto pkt_serialized = pkt.serialize();
-//      ssize_t nsent = _socket.send1(pkt_serialized);
-//      if (nsent == -1) {
-//        if (errno == EWOULDBLOCK) {
-//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
-//          break;
-//        }
-//        else if (errno == ECONNREFUSED) {
-//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
-//          break;
-//        }
-//        else {
-//          std::string err_msg = "send() failed. Error message: ";
-//          err_msg += strerror(errno);
-//          perror(err_msg.c_str());
-//          exit(EXIT_FAILURE);
-//        }
-//      }
-//      resend_queue.pop();
-//      std::cerr << "[DEBUG] Resending packet with seq_id: " << pkt.seq_id() << std::endl;
+//  while (true) {
+//    std::unique_lock<std::mutex> interval_lock(_interval_mutex);
+//    // Wait for either the timeout or for a signal to stop the thread
+//    _resend_cv.wait_for(interval_lock, std::chrono::milliseconds(current_interval_ms), [this] {
+//        return _stop_thread.load();
+//    });
+//
+//    if (_stop_thread.load()) {
+//      break;
 //    }
 //
-//    _event_loop.rearm(_out_fd, EPOLLOUT);
-//  }
-//}
-
-//void StubbornLink::write_event_handler(uint32_t events) {
-//  if (events & EPOLLOUT) {
-////    std::cerr << "[DEBUG] Received event for fd: " << _socket.sockfd() << std::endl;
-////    std::cerr << "[DEBUG] StubbornLink::write_event_handler: Writing data to socket." << std::endl;
-//    //  Data can be written.
-//    //  Send all unacked packets.
-//    std::lock_guard<std::mutex> lock(unacked_mutex);
-////    std::cerr << "[DEBUG] Sending unacked packets from " << inet_ntoa(_local_addr.sin_addr) << " " << ntohs(_local_addr.sin_port) << std::endl;
-//    for (const auto& [seq_id, pkt] : unacked_packets) {
-//      auto pkt_serialized = pkt.serialize();
-//      ssize_t nsent = _socket.send1(pkt_serialized);
-//      if (nsent == -1) {
-//        if (errno == EWOULDBLOCK) {
-//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned EWOULDBLOCK" << std::endl;
-//          break;
-//        }
-//        else if (errno == ECONNREFUSED) {
-//          std::cerr << "[DEBUG] " << inet_ntoa(_local_addr.sin_addr) << " " << _local_addr.sin_port << "Sent returned ECONNREFUSED" << std::endl;
-//          break;
-//        }
-//        else {
-//          std::string err_msg = "send() failed. Error message: ";
-//          err_msg += strerror(errno);
-//          perror(err_msg.c_str());
-//          exit(EXIT_FAILURE);
-//        }
-//      }
+//    std::unique_lock<std::mutex> lock(_unacked_mutex);
+//    if (unacked_packets.empty()) {
+//      continue;
 //    }
 //
-//    _event_loop.rearm(_out_fd, EPOLLOUT);
+////    bool success = false;
+//    uint32_t packets_sent = 0;
+//    for (const auto& pkt : unacked_packets) {
+//      if (packets_sent >= window_size) {
+//        window_size = initial_window_size;
+//        current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+//        break;
+//      }
+//
+//      auto pkt_serialized = pkt.serialize();
+//
+//      ssize_t nsent = _socket.send_buf(pkt_serialized);
+//      if (nsent == -1) {
+//        if (errno == ECONNREFUSED) {
+//          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+//        } else if (errno == EWOULDBLOCK) {
+//          // Buffer is full. Reduce window size.
+//          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+//          window_size /= 2;
+//          break;
+//        } else {
+//          perror("send failed");
+//        }
+//      } else {
+//        packets_sent++;
+//      }
+//    }
+//    lock.unlock();
+//
+////    if (_ack_received.load()) {
+////      _ack_received.store(false);
+////      current_interval_ms = initial_interval_ms;
+////      window_size *= 2;
+////    } else {
+////      current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+////      window_size /= 2;
+////    }
 //  }
 //}
 
-//void StubbornLink::enable_epollout() {
-//  _event_loop.modify(_out_fd, EPOLLOUT);
-//}
-//
-//void StubbornLink::disable_epollout() {
-//  _event_loop.modify(_out_fd, 0);
-//}
-
-//void StubbornLink::send(const Packet& p) {
-//  std::lock_guard<std::mutex> lock(unacked_mutex);
-//
-//  // Check if this is the first unacknowledged packet being added
-//  bool was_empty = unacked_packets.empty();
-//  unacked_packets[p.seq_id()] = p;
-//  auto pkt_serialized = p.serialize();
-//  _socket.send1(pkt_serialized);
-//
-//  // If it was empty, we need to enable EPOLLOUT to handle sending
-//  if (was_empty) {
-//    enable_epollout();
-//  }
-//}
-
-//bool StubbornLink::all_acked() {
-//  std::lock_guard<std::mutex> lock(unacked_mutex);
-//  return unacked_packets.empty();
-//}
+int StubbornLink::backoff_interval(int timeout) {
+  std::uniform_int_distribution<int> distribution(timeout, 2 * timeout);
+  return distribution(_random_engine);
+}

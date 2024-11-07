@@ -12,7 +12,7 @@
 
 class ThreadPool {
 public:
-    ThreadPool(size_t num_threads);
+    explicit ThreadPool(size_t num_threads);
 
     void stop();
     void enqueue(std::function<void()> task);
