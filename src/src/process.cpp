@@ -65,7 +65,10 @@ void Process::stop() {
   std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
 
   std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
-  _outfile.flush();
+  {
+    std::lock_guard<std::mutex> lock(_outfile_mutex);
+    _outfile.flush();
+  }
   _pl->stop();
   _event_loop.stop();
 }
@@ -101,7 +104,7 @@ void Process::run_sender(const Config& cfg) {
 //    Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
 //    _pl->send(p, cfg.receiver_proc());
 //  }
-  _pl->send(cfg.num_messages(), cfg.receiver_proc(), _outfile);
+  _pl->send(cfg.num_messages(), cfg.receiver_proc(), _outfile, _outfile_mutex);
 
 //  _event_loop.run();
 }
@@ -120,6 +123,7 @@ void Process::sender_deliver_callback(const Packet& pkt) {
 }
 
 void Process::receiver_deliver_callback(const Packet& pkt) {
+  std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;
     std::memcpy(&seq_id, pkt.data().data() + i, sizeof(uint32_t));

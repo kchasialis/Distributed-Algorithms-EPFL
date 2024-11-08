@@ -130,9 +130,8 @@ void StubbornLink::process_packet(const Packet& pkt) {
   }
 }
 
-void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile) {
-//  std::lock_guard<std::mutex> lock(_unacked_mutex);
-//  unacked_packets.insert(pkt);
+void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex) {
+  std::vector<std::string> output_buffers;
   {
     std::lock_guard<std::mutex> lock(_unacked_mutex);
     uint32_t current_seq_id = 1;
@@ -142,12 +141,19 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile) {
       for (uint32_t j = 0; j < packet_size; j++) {
         std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id,
                     sizeof(uint32_t));
-        outfile << "b " << current_seq_id << "\n";
+        output_buffers.push_back("b " + std::to_string(current_seq_id) + "\n");
         current_seq_id++;
       }
 
       Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
       unacked_packets.insert(p);
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(outfile_mutex);
+    for (const auto& buffer : output_buffers) {
+      outfile << buffer;
     }
   }
 

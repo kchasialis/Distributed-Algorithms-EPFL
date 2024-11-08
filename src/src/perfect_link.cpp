@@ -55,15 +55,15 @@ void PerfectLink::deliver_packet(const Packet& pkt) {
       }
       _delivered.insert(p);
 
-      _deliver_cb(pkt);
     }
+    _deliver_cb(pkt);
   }
 }
 
-void PerfectLink::send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile) {
+void PerfectLink::send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile, std::mutex &outfile_mutex) {
 //  _sl->send(p, addr);
 //  std::cerr << "[DEBUG] Sending to peer " << peer << std::endl;
-  _sl_map[peer]->send(n_messages, outfile);
+  _sl_map[peer]->send(n_messages, outfile, outfile_mutex);
 }
 
 void PerfectLink::send_syn_packets() {

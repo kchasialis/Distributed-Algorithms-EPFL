@@ -30,6 +30,7 @@ private:
     ThreadPool *_thread_pool;
     std::vector<Parser::Host> _hosts;
     PerfectLink *_pl;
+    std::mutex _outfile_mutex;
     std::ofstream _outfile;
     size_t _n_messages;
 

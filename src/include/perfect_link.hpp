@@ -36,7 +36,8 @@ public:
               EventLoop& event_loop, DeliverCallback deliver_cb);
   ~PerfectLink();
 
-  void send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile);
+  void send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile,
+            std::mutex &outfile_mutex);
   void send_syn_packets();
   void stop();
 };

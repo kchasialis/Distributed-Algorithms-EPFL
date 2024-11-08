@@ -24,7 +24,7 @@ public:
                bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
 //  ~StubbornLink();
 
-  void send(uint32_t n_messages, std::ofstream &outfile);
+  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   bool send_syn_packet();
   void stop();
 private:
