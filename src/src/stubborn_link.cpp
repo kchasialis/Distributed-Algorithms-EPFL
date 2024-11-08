@@ -223,7 +223,7 @@ bool StubbornLink::send_syn_packet() {
 }
 
 void StubbornLink::stop() {
-  std::cerr << "Stopping stubborn link..." << std::endl;
+//  std::cerr << "Stopping stubborn link..." << std::endl;
   _stop.store(true);
   // Notify that SYN has been received
   {

@@ -30,7 +30,7 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
 //  if (n_threads == 0) {
 //    n_threads = 2;
 //  }
-  _thread_pool = new ThreadPool(2);
+  _thread_pool = new ThreadPool(8);
 
   for (uint32_t i = 0; i < event_loop_workers; i++) {
     _thread_pool->enqueue([this] {
@@ -65,9 +65,9 @@ void Process::stop() {
   std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
 
   std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
+  _outfile.flush();
   _pl->stop();
   _event_loop.stop();
-//  _outfile.flush();
 }
 
 EventLoop& Process::event_loop() {
@@ -104,8 +104,6 @@ void Process::run_sender(const Config& cfg) {
   _pl->send(cfg.num_messages(), cfg.receiver_proc(), _outfile);
 
 //  _event_loop.run();
-
-  std::cerr << "BYE BRO!" << std::endl;
 }
 
 void Process::run_receiver(const Config& cfg) {
@@ -115,8 +113,6 @@ void Process::run_receiver(const Config& cfg) {
   std::cerr << "[DEBUG] Finished sending SYN packets!" << std::endl;
 
   _event_loop.run();
-
-  std::cerr << "BYE BRO!" << std::endl;
 }
 
 void Process::sender_deliver_callback(const Packet& pkt) {
@@ -127,7 +123,6 @@ void Process::receiver_deliver_callback(const Packet& pkt) {
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;
     std::memcpy(&seq_id, pkt.data().data() + i, sizeof(uint32_t));
-    std::cerr << "Delivered message with seq_id: " << seq_id << std::endl;
     _outfile << "d " << pkt.pid() << " " << seq_id << "\n";
     assert(_n_messages > 0);
     --_n_messages;
