@@ -26,10 +26,6 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
     });
   }
 
-//  uint32_t n_threads = std::thread::hardware_concurrency();
-//  if (n_threads == 0) {
-//    n_threads = 2;
-//  }
   _thread_pool = new ThreadPool(8);
 
   for (uint32_t i = 0; i < event_loop_workers; i++) {
@@ -40,11 +36,11 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
 }
 
 Process::~Process() {
-  std::cerr << "[DEBUG] Stopping thread pool..." << std::endl;
+//  std::cerr << "[DEBUG] Stopping thread pool..." << std::endl;
   _thread_pool->stop();
-  std::cerr << "[DEBUG] Closing the file..." << std::endl;
+//  std::cerr << "[DEBUG] Closing the file..." << std::endl;
   _outfile.close();
-  std::cerr << "[DEBUG] Deleting the PerfectLink instance..." << std::endl;
+//  std::cerr << "[DEBUG] Deleting the PerfectLink instance..." << std::endl;
   delete _pl;
   delete _thread_pool;
 }
@@ -62,9 +58,9 @@ void Process::run(const Config& cfg) {
 }
 
 void Process::stop() {
-  std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
-
-  std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
+//  std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
+//
+//  std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
   {
     std::lock_guard<std::mutex> lock(_outfile_mutex);
     _outfile.flush();
@@ -113,7 +109,7 @@ void Process::run_receiver(const Config& cfg) {
   assert (cfg.receiver_proc() == _pid);
 
   _pl->send_syn_packets();
-  std::cerr << "[DEBUG] Finished sending SYN packets!" << std::endl;
+//  std::cerr << "[DEBUG] Finished sending SYN packets!" << std::endl;
 
   _event_loop.run();
 }
@@ -131,8 +127,8 @@ void Process::receiver_deliver_callback(const Packet& pkt) {
     assert(_n_messages > 0);
     --_n_messages;
     if (_n_messages == 0) {
-      std::cerr << "[DEBUG] Delivered all messages!" << std::endl;
+      std::cerr << "[DEBUG] Process " << _pid << " received all messages!" << std::endl;
     }
   }
-//  _outfile << "d " << pkt.pid() << " " << pkt.seq_id() << "\n";
+  _outfile.flush();
 }

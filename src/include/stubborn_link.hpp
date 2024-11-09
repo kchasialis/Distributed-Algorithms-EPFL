@@ -22,7 +22,6 @@ public:
   StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                in_addr_t paddr, uint16_t pport,
                bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
-//  ~StubbornLink();
 
   void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   bool send_syn_packet();

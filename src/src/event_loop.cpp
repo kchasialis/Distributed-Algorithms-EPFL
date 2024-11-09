@@ -100,7 +100,7 @@ void EventLoop::run() {
       }
 
       if ((events[i].events & EPOLLIN) && events[i].data.fd == _exit_loop_fd) {
-        std::cerr << "[DEBUG] Received exit signal. " << std::endl;
+//        std::cerr << "[DEBUG] Received exit signal. " << std::endl;
         uint64_t u;
         // Read to clear the read buffer.
         if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
@@ -115,7 +115,7 @@ void EventLoop::run() {
         if (write(_exit_loop_fd, &u, sizeof(u)) == -1) {
           perror("write to wakeup_fd failed");
         }
-        std::cerr << "[DEBUG] Writing exit signal. " << std::endl;
+//        std::cerr << "[DEBUG] Writing exit signal. " << std::endl;
         continue;
       }
 
