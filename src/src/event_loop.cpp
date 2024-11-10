@@ -89,9 +89,9 @@ void EventLoop::run() {
       if (events[i].events & EPOLLERR) {
         int err = 0;
         socklen_t len = sizeof(err);
-        if (getsockopt(events[i].data.fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0) {
-//          std::cerr << "[DEBUG] EPOLLERR on fd: " << events[i].data.fd
-//                    << ", error: " << strerror(err) << std::endl;
+        if (getsockopt(events[i].data.fd, SOL_SOCKET, SO_ERROR, &err, &len) == -1) {
+          perror("getsockopt failed");
+          exit(EXIT_FAILURE);
         }
         if (err == ECONNREFUSED) {
           rearm(events[i].data.fd, EPOLLIN);
@@ -100,13 +100,10 @@ void EventLoop::run() {
       }
 
       if ((events[i].events & EPOLLIN) && events[i].data.fd == _exit_loop_fd) {
-//        std::cerr << "[DEBUG] Received exit signal. " << std::endl;
         uint64_t u;
         // Read to clear the read buffer.
         if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
           break;
-//          perror("read from wakeup_fd failed");
-//          exit(EXIT_FAILURE);
         }
         rearm(_exit_loop_fd, EPOLLIN);
 
@@ -115,7 +112,6 @@ void EventLoop::run() {
         if (write(_exit_loop_fd, &u, sizeof(u)) == -1) {
           perror("write to wakeup_fd failed");
         }
-//        std::cerr << "[DEBUG] Writing exit signal. " << std::endl;
         continue;
       }
 

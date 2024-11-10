@@ -1,14 +1,12 @@
 #include "thread_pool.hpp"
 
 ThreadPool::ThreadPool(size_t num_threads) : _stop_threads(false) {
-//  std::cerr << "[DEBUG] Started thread pool with " << num_threads << " threads" << std::endl;
   for (size_t i = 0; i < num_threads; ++i) {
     _workers.emplace_back([this] { worker_function(); });
   }
 }
 
 void ThreadPool::stop() {
-//  std::cerr << "[DEBUG] ThreadPool::~ThreadPool()" << std::endl;
   _stop_threads = true;
   cv.notify_all();
   for (std::thread &worker : _workers) {

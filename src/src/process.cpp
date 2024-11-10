@@ -36,11 +36,8 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
 }
 
 Process::~Process() {
-//  std::cerr << "[DEBUG] Stopping thread pool..." << std::endl;
   _thread_pool->stop();
-//  std::cerr << "[DEBUG] Closing the file..." << std::endl;
   _outfile.close();
-//  std::cerr << "[DEBUG] Deleting the PerfectLink instance..." << std::endl;
   delete _pl;
   delete _thread_pool;
 }
@@ -58,9 +55,6 @@ void Process::run(const Config& cfg) {
 }
 
 void Process::stop() {
-//  std::cerr << "[DEBUG] Stopping process: " << _pid << std::endl;
-//
-//  std::cerr << "[DEBUG] Stopping event loop..." << std::endl;
   {
     std::lock_guard<std::mutex> lock(_outfile_mutex);
     _outfile.flush();
@@ -87,29 +81,13 @@ void Process::run_sender(const Config& cfg) {
   }
   assert(found);
 
-//  uint32_t current_seq_id = 1;
-//  for (uint32_t i = 0; i < cfg.num_messages(); i += 8) {
-//    uint32_t packet_size = std::min(8U, cfg.num_messages() - i);
-//    std::vector<uint8_t> data(packet_size * sizeof(uint32_t));
-//    for (uint32_t j = 0; j < packet_size; j++) {
-//      std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id, sizeof(uint32_t));
-//      _outfile << "b " << current_seq_id << "\n";
-//      current_seq_id++;
-//    }
-//
-//    Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
-//    _pl->send(p, cfg.receiver_proc());
-//  }
   _pl->send(cfg.num_messages(), cfg.receiver_proc(), _outfile, _outfile_mutex);
-
-//  _event_loop.run();
 }
 
 void Process::run_receiver(const Config& cfg) {
   assert (cfg.receiver_proc() == _pid);
 
   _pl->send_syn_packets();
-//  std::cerr << "[DEBUG] Finished sending SYN packets!" << std::endl;
 
   _event_loop.run();
 }
@@ -118,6 +96,7 @@ void Process::sender_deliver_callback(const Packet& pkt) {
   (void) pkt;
 }
 
+// Specialize this function for message data types.
 void Process::receiver_deliver_callback(const Packet& pkt) {
   std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {

@@ -11,8 +11,7 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            in_addr_t paddr, uint16_t pport,
                            bool sender, EventLoop& event_loop, DeliverCallback deliver_cb) :
                            _socket(addr, port), _sender(sender), _event_loop(event_loop),
-                           _deliver_cb(std::move(deliver_cb)), _pid(pid), _stop(false),
-                           _ack_received(false) {
+                           _deliver_cb(std::move(deliver_cb)), _pid(pid), _stop(false) {
 
   struct sockaddr_in peer_addr{};
   peer_addr.sin_family = AF_INET;
@@ -35,6 +34,7 @@ void StubbornLink::read_event_handler(uint32_t events) {
       if (nrecv == -1) {
         if (errno == EWOULDBLOCK) {
           // No more data to read.
+          _event_loop.rearm(_socket.infd(), EPOLLIN);
           break;
         }
         std::string err_msg = "recv() failed. Error message: ";
@@ -43,6 +43,7 @@ void StubbornLink::read_event_handler(uint32_t events) {
         exit(EXIT_FAILURE);
       }
       if (nrecv == 0) {
+        _event_loop.rearm(_socket.infd(), EPOLLIN);
         continue;
       }
       // Process the received data.
@@ -50,8 +51,9 @@ void StubbornLink::read_event_handler(uint32_t events) {
       buffer.resize(static_cast<size_t>(nrecv));
       pkt.deserialize(buffer);
       process_packet(pkt);
+
+      _event_loop.rearm(_socket.infd(), EPOLLIN);
     }
-    _event_loop.rearm(_socket.infd(), EPOLLIN);
   }
 }
 
@@ -59,7 +61,6 @@ void StubbornLink::process_packet(const Packet& pkt) {
   switch (pkt.packet_type()) {
     case PacketType::SYN:
     {
-//      std::cerr << "[DEBUG] Received SYN packet from receiver!" << std::endl;
       assert(_sender);
       // Notify that SYN has been received
       {
@@ -68,7 +69,6 @@ void StubbornLink::process_packet(const Packet& pkt) {
       }
       _syn_received_cv.notify_all();
       // Send a SYN_ACK.
-//      std::cerr << "[DEBUG] Sending SYNACK packet to receiver!" << std::endl;
       assert(pkt.seq_id() == 0);
       Packet ack_pkt(_pid, PacketType::ACK, pkt.seq_id());
       _socket.send_buf(ack_pkt.serialize());
@@ -77,24 +77,23 @@ void StubbornLink::process_packet(const Packet& pkt) {
     case PacketType::ACK:
     {
       if (pkt.seq_id() == 0) {
-//        std::cerr << "[DEBUG] Received SYNACK packet from sender!" << std::endl;
         _syn_ack_received.store(true);
       } else {
         std::lock_guard<std::mutex> lock(_unacked_mutex);
         unacked_packets.erase(pkt);
-        _ack_received.store(true);
       }
       break;
     }
     case PacketType::DATA:
     {
       // It is a data packet.
-      // Send an ACK.
-      Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
-      _socket.send_buf(ack_pkt.serialize());
 
       // Deliver the data packet.
       _deliver_cb(pkt);
+
+      // Send an ACK.
+      Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
+      _socket.send_buf(ack_pkt.serialize());
       break;
     }
     default:
@@ -104,6 +103,7 @@ void StubbornLink::process_packet(const Packet& pkt) {
 }
 
 void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex) {
+  // Send 8 messages at a single packet.
   std::vector<std::string> output_buffers;
   {
     std::lock_guard<std::mutex> lock(_unacked_mutex);
@@ -128,36 +128,37 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
     for (const auto& buffer : output_buffers) {
       outfile << buffer;
     }
+    outfile.flush();
   }
 
   const int initial_interval_ms = 100;
   const int max_interval_ms = 5000;
 
+  uint32_t threshold = 1;
+  uint32_t initial_window_size = 300;
   int current_interval_ms = initial_interval_ms;
-  uint32_t initial_window_size = 1000;
   uint32_t window_size = initial_window_size;
 
-//  std::cerr << "[DEBUG] Waiting for SYN packet from receiver..." << std::endl;
+  // Wait for receiver to start.
   {
     std::unique_lock<std::mutex> syn_lock(_syn_mutex);
     _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
   }
-//  std::cerr << "[DEBUG] Unblocked! Sending packets..." << std::endl;
 
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
-
-    if (_stop.load()) {
-      break;
-    }
-
-    std::unique_lock<std::mutex> lock(_unacked_mutex);
-    if (unacked_packets.empty()) {
-      break;
+  while (!_stop.load()) {
+    std::vector<Packet> packets_to_send;
+    {
+      std::unique_lock<std::mutex> lock(_unacked_mutex);
+      if (unacked_packets.empty()) {
+        break;
+      }
+      for (const auto& pkt : unacked_packets) {
+        packets_to_send.push_back(pkt);
+      }
     }
 
     uint32_t packets_sent = 0;
-    for (const auto& pkt : unacked_packets) {
+    for (const auto& pkt : packets_to_send) {
       if (packets_sent >= window_size) {
         window_size = initial_window_size;
         current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
@@ -174,6 +175,9 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
           // Buffer is full. Reduce window size.
           current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
           window_size /= 2;
+          if (window_size <= threshold) {
+            window_size = threshold;
+          }
           break;
         } else {
           perror("send failed");
@@ -182,7 +186,8 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
         packets_sent++;
       }
     }
-    lock.unlock();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
   }
 }
 
@@ -197,9 +202,8 @@ bool StubbornLink::send_syn_packet() {
 }
 
 void StubbornLink::stop() {
-//  std::cerr << "Stopping stubborn link..." << std::endl;
   _stop.store(true);
-  // Notify that SYN has been received
+  // Notify that SYN has been received to unblock sender.
   {
     std::lock_guard<std::mutex> lock(_syn_mutex);
     _syn_received.store(true);

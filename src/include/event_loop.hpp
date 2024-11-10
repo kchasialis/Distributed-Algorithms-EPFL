@@ -23,5 +23,4 @@ public:
     void run();
     void stop();
     void rearm(int fd, uint32_t event) const;
-//    void modify(int fd, uint32_t events);
 };

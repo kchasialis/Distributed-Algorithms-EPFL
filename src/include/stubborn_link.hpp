@@ -17,6 +17,8 @@
 
 using DeliverCallback = std::function<void(const Packet& pkt)>;
 
+constexpr int sliding_window_size = 32;
+
 class StubbornLink {
 public:
   StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
@@ -31,7 +33,6 @@ private:
   bool _sender;
   EventLoop &_event_loop;
   std::unordered_set<Packet, PacketHash, PacketEqual> unacked_packets;
-  std::mutex _interval_mutex;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
   uint64_t _pid;
@@ -45,15 +46,11 @@ private:
   std::thread _syn_resend_thread;
   std::atomic<bool> _stop;
   std::atomic<bool> _syn_ack_received{false};
-  std::atomic<bool> _ack_received;
   std::default_random_engine _random_engine{std::random_device{}()};
 
   void read_event_handler(uint32_t events);
 
   void process_packet(const Packet &pkt);
 
-//  void resend_syn_packet();
-//
-//  void resend_unacked_packets();
   int backoff_interval(int timeout);
 };

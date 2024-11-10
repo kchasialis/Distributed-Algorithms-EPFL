@@ -21,8 +21,6 @@ UDPSocket::UDPSocket(in_addr_t addr, uint16_t port) {
   sock_addr.sin_port = port;
   sock_addr.sin_addr.s_addr = addr;
 
-//  std::cerr << "[DEBUG] Binding to " << inet_ntoa(_addr.sin_addr) << ":" << ntohs(_addr.sin_port) << std::endl;
-
   // Allow reusing the same address and port for multiple sockets.
   int optval = 1;
   if (setsockopt(_outfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) < 0) {

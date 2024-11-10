@@ -15,14 +15,6 @@ static void stop(int) {
   signal(SIGTERM, SIG_DFL);
   signal(SIGINT, SIG_DFL);
 
-//  signal_handler();
-
-//  {
-//    std::lock_guard<std::mutex> lock(signal_handler_mutex);
-//    if (signal_handler) {
-//      signal_handler();
-//    }
-//  }
   signal_handler();
 
 //  std::cerr << "Stop requested" << std::endl;
@@ -97,13 +89,6 @@ int main(int argc, char **argv) {
     std::cerr << "Failed to run process with id: " << parser.id() << std::endl;
     return err;
   }
-
-//  while (!stop_requested) {
-//    std::cerr << "Process is running..." << std::endl;
-//    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-//  }
-//  std::cerr << "Stopping process..." << std::endl;
-//  signal_handler();
 
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
