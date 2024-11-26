@@ -131,8 +131,8 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
     outfile.flush();
   }
 
-  const int initial_interval_ms = 100;
-  const int max_interval_ms = 5000;
+  const int initial_interval_ms = 50;
+  const int max_interval_ms = 1000;
 
   uint32_t threshold = 1;
   uint32_t initial_window_size = 300;
@@ -161,7 +161,8 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
     for (const auto& pkt : packets_to_send) {
       if (packets_sent >= window_size) {
         window_size = initial_window_size;
-        current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+        current_interval_ms = initial_interval_ms;
+        std::cerr << "Current interval ms set to initial: " << current_interval_ms << std::endl;
         break;
       }
 
@@ -171,9 +172,11 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
       if (nsent == -1) {
         if (errno == ECONNREFUSED) {
           current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+          std::cerr << "Current interval ms increased to " << current_interval_ms << std::endl;
         } else if (errno == EWOULDBLOCK) {
           // Buffer is full. Reduce window size.
           current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
+          std::cerr << "Current interval ms increased to " << current_interval_ms << std::endl;
           window_size /= 2;
           if (window_size <= threshold) {
             window_size = threshold;

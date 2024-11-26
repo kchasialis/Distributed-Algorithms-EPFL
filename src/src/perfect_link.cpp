@@ -16,7 +16,6 @@ PerfectLink::PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port, bool sende
     // Connect only to receiver.
     for (const auto& host : hosts) {
       if (host.id == receiver_proc) {
-//        std::cerr << "[DEBUG] PerfectLink::PerfectLink: Connecting to host " << host.id << std::endl;
         _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port,
                                             sender, event_loop, [this](const Packet& pkt) {
           this->deliver_packet(pkt);
@@ -30,7 +29,6 @@ PerfectLink::PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port, bool sende
       if (host.id == pid) {
         continue;
       }
-//      std::cerr << "[DEBUG] PerfectLink::PerfectLink: Connecting to host " << host.id << std::endl;
       _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port, sender, event_loop,
                                           [this](const Packet& pkt) {
                                               this->deliver_packet(pkt);
@@ -67,7 +65,6 @@ void PerfectLink::send(uint32_t n_messages, uint64_t peer, std::ofstream &outfil
 }
 
 void PerfectLink::send_syn_packets() {
-//  std::cerr << "[DEBUG] Sending SYN packets to senders!" << std::endl;
   const int interval_ms = 200;
   std::unordered_map<uint64_t, bool> syn_acked;
   for (const auto& sl : _sl_map) {
