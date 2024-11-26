@@ -10,7 +10,8 @@ set(SOURCES src/main.cpp
             src/config.cpp
         src/thread_pool.cpp
         src/udp_socket.cpp
-        src/event_loop.cpp)
+        src/event_loop.cpp
+src/read_event_handler.cpp)
 
 # DO NOT EDIT THE FOLLOWING LINES
 find_package(Threads)

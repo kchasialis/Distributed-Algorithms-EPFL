@@ -109,5 +109,4 @@ void Process::receiver_deliver_callback(const Packet& pkt) {
       std::cerr << "[DEBUG] Process " << _pid << " received all messages!" << std::endl;
     }
   }
-  _outfile.flush();
 }

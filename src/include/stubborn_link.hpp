@@ -14,6 +14,7 @@
 #include "packet.hpp"
 #include "event_loop.hpp"
 #include "parser.hpp"
+#include "read_event_handler.hpp"
 
 using DeliverCallback = std::function<void(const Packet& pkt)>;
 
@@ -26,6 +27,7 @@ public:
                bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
 
   void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
+//  void read_event_handler(uint32_t events);
   bool send_syn_packet();
   void stop();
 private:
@@ -36,19 +38,18 @@ private:
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
   uint64_t _pid;
+  ReadEventHandler *_read_event_handler;
+  EventData _read_event_data{};
 
   std::condition_variable _syn_received_cv;
   std::mutex _syn_mutex;
   std::atomic<bool> _syn_received{false};
   std::mutex _unacked_mutex;
-  std::queue<Packet> _resend_queue;
   std::thread _resend_thread;
   std::thread _syn_resend_thread;
   std::atomic<bool> _stop;
   std::atomic<bool> _syn_ack_received{false};
   std::default_random_engine _random_engine{std::random_device{}()};
-
-  void read_event_handler(uint32_t events);
 
   void process_packet(const Packet &pkt);
 

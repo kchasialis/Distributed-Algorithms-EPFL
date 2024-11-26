@@ -8,19 +8,23 @@
 
 #define MAX_EVENTS 100
 
+struct EventData {
+    int fd;
+    void *handler_obj;
+};
+
 class EventLoop {
 private:
     int _epoll_fd;
     int _exit_loop_fd;
     std::atomic<bool> _running;
-    std::unordered_map<int, std::function<void(uint32_t)>> _handlers;
-    std::mutex _handlers_mutex;
+    EventData _exit_loop_data{};
 
 public:
     EventLoop();
     ~EventLoop();
-    void add(int fd, uint32_t events, std::function<void(uint32_t)> handler);
+    void add(uint32_t events, EventData *event_data) const;
+    void rearm(uint32_t event, EventData *event_data) const;
     void run();
     void stop();
-    void rearm(int fd, uint32_t event) const;
 };

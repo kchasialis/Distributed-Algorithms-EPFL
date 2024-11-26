@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <utility>
 #include <cassert>
-//#include <random>
 #include "stubborn_link.hpp"
 
 StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
@@ -19,43 +18,50 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   peer_addr.sin_addr.s_addr = paddr;
   _socket.conn(peer_addr);
 
-  event_loop.add(_socket.infd(), EPOLLIN, [this](uint32_t events) {
-      read_event_handler(events);
-  });
+  _read_event_handler = new ReadEventHandler(&_socket, &event_loop,
+                                             [this](const Packet& pkt) { this->process_packet(pkt); });
+  _read_event_data.fd = _socket.infd();
+  _read_event_data.handler_obj = _read_event_handler;
+
+  event_loop.add(EPOLLIN, &_read_event_data);
+
+//  event_loop.add(_socket.infd(), EPOLLIN, [this](uint32_t events) {
+//      read_event_handler(events);
+//  });
 }
 
-void StubbornLink::read_event_handler(uint32_t events) {
-  if (events & EPOLLIN) {
-    // Data is available to read.
-    std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
-    while (true) {
-      buffer.resize(RECV_BUF_SIZE);
-      ssize_t nrecv = _socket.recv_buf(buffer);
-      if (nrecv == -1) {
-        if (errno == EWOULDBLOCK) {
-          // No more data to read.
-          _event_loop.rearm(_socket.infd(), EPOLLIN);
-          break;
-        }
-        std::string err_msg = "recv() failed. Error message: ";
-        err_msg += strerror(errno);
-        perror(err_msg.c_str());
-        exit(EXIT_FAILURE);
-      }
-      if (nrecv == 0) {
-        _event_loop.rearm(_socket.infd(), EPOLLIN);
-        continue;
-      }
-      // Process the received data.
-      Packet pkt;
-      buffer.resize(static_cast<size_t>(nrecv));
-      pkt.deserialize(buffer);
-      process_packet(pkt);
-
-      _event_loop.rearm(_socket.infd(), EPOLLIN);
-    }
-  }
-}
+//void StubbornLink::read_event_handler(uint32_t events) {
+//  if (events & EPOLLIN) {
+//    // Data is available to read.
+//    std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
+//    while (true) {
+//      buffer.resize(RECV_BUF_SIZE);
+//      ssize_t nrecv = _socket.recv_buf(buffer);
+//      if (nrecv == -1) {
+//        if (errno == EWOULDBLOCK) {
+//          // No more data to read.
+//          _event_loop.rearm(_socket.infd(), EPOLLIN);
+//          break;
+//        }
+//        std::string err_msg = "recv() failed. Error message: ";
+//        err_msg += strerror(errno);
+//        perror(err_msg.c_str());
+//        exit(EXIT_FAILURE);
+//      }
+//      if (nrecv == 0) {
+//        _event_loop.rearm(_socket.infd(), EPOLLIN);
+//        continue;
+//      }
+//      // Process the received data.
+//      Packet pkt;
+//      buffer.resize(static_cast<size_t>(nrecv));
+//      pkt.deserialize(buffer);
+//      process_packet(pkt);
+//
+//      _event_loop.rearm(_socket.infd(), EPOLLIN);
+//    }
+//  }
+//}
 
 void StubbornLink::process_packet(const Packet& pkt) {
   switch (pkt.packet_type()) {

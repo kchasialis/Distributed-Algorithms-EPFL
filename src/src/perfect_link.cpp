@@ -65,7 +65,7 @@ void PerfectLink::send(uint32_t n_messages, uint64_t peer, std::ofstream &outfil
 }
 
 void PerfectLink::send_syn_packets() {
-  const int interval_ms = 200;
+  const int interval_ms = 50;
   std::unordered_map<uint64_t, bool> syn_acked;
   for (const auto& sl : _sl_map) {
     syn_acked[sl.first] = false;

@@ -5,6 +5,7 @@
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include "event_loop.hpp"
+#include "stubborn_link.hpp"
 
 EventLoop::EventLoop() : _running(true) {
   _epoll_fd = epoll_create1(0);
@@ -14,7 +15,7 @@ EventLoop::EventLoop() : _running(true) {
   }
 
   // Create the wakeup event file descriptor
-  _exit_loop_fd = eventfd(0, EFD_NONBLOCK);
+  _exit_loop_fd = eventfd(0, 0);
   if (_exit_loop_fd == -1) {
     perror("eventfd failed");
     close(_epoll_fd);
@@ -22,15 +23,8 @@ EventLoop::EventLoop() : _running(true) {
   }
 
   // Add the wakeup file descriptor to epoll for monitoring
-  struct epoll_event ev{};
-  ev.events = EPOLLIN;
-  ev.data.fd = _exit_loop_fd;
-  if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _exit_loop_fd, &ev) == -1) {
-    perror("epoll_ctl failed");
-    close(_epoll_fd);
-    close(_exit_loop_fd);
-    exit(EXIT_FAILURE);
-  }
+  _exit_loop_data.fd = _exit_loop_fd;
+  add(EPOLLIN, &_exit_loop_data);
 }
 
 EventLoop::~EventLoop() {
@@ -38,19 +32,17 @@ EventLoop::~EventLoop() {
   close(_epoll_fd);
 }
 
-void EventLoop::add(int fd, uint32_t events, std::function<void(uint32_t)> handler) {
+void EventLoop::add(uint32_t events, EventData *event_data) const {
   struct epoll_event ev{};
   ev.events = events | EPOLLONESHOT;
 //  ev.events = events;
-  ev.data.fd = fd;
-  if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+//  ev.data.fd = fd;
+  ev.data.ptr = event_data;
+  if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl failed");
+    close(_epoll_fd);
+    close(_exit_loop_fd);
     exit(EXIT_FAILURE);
-  }
-
-  {
-    std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
-    _handlers[fd] = std::move(handler);
   }
 }
 
@@ -63,11 +55,13 @@ void EventLoop::add(int fd, uint32_t events, std::function<void(uint32_t)> handl
  * specified, it is the caller's responsibility to rearm the file
  * descriptor using epoll_ctl(2) with EPOLL_CTL_MOD.
  * */
-void EventLoop::rearm(int fd, uint32_t event) const {
+void EventLoop::rearm(uint32_t event, EventData *event_data) const {
   epoll_event ev{};
   ev.events = event | EPOLLONESHOT;
-  ev.data.fd = fd;
-  if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+//  ev.events = event;
+//  ev.data.fd = fd;
+  ev.data.ptr = event_data;
+  if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl rearm failed");
     exit(EXIT_FAILURE);
   }
@@ -86,26 +80,19 @@ void EventLoop::run() {
       exit(EXIT_FAILURE);
     }
     for (int i = 0; i < nfds; i++) {
+      auto *event_data = static_cast<EventData *>(events[i].data.ptr);
       if (events[i].events & EPOLLERR) {
-        int err = 0;
-        socklen_t len = sizeof(err);
-        if (getsockopt(events[i].data.fd, SOL_SOCKET, SO_ERROR, &err, &len) == -1) {
-          perror("getsockopt failed");
-          exit(EXIT_FAILURE);
-        }
-        if (err == ECONNREFUSED) {
-          rearm(events[i].data.fd, EPOLLIN);
-        }
+        rearm(EPOLLIN, event_data);
         continue;
       }
 
-      if ((events[i].events & EPOLLIN) && events[i].data.fd == _exit_loop_fd) {
+      if ((events[i].events & EPOLLIN) && event_data->fd == _exit_loop_fd) {
         uint64_t u;
         // Read to clear the read buffer.
         if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
           break;
         }
-        rearm(_exit_loop_fd, EPOLLIN);
+        rearm(EPOLLIN, event_data);
 
         // Write to wakeup file descriptor to unblock epoll_wait
         u = 1;
@@ -115,12 +102,17 @@ void EventLoop::run() {
         continue;
       }
 
-      {
-        std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
-        auto it = _handlers.find(events[i].data.fd);
-        assert(it != _handlers.end() && "Handler not found!");
-        it->second(events[i].events);
-      }
+      // Call the handler
+      auto *handler = static_cast<ReadEventHandler *>(event_data->handler_obj);
+      handler->handle_read_event(events[i].events);
+      rearm(EPOLLIN, event_data);
+
+//      {
+//        std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
+//        auto it = _handlers.find(events[i].data.fd);
+//        assert(it != _handlers.end() && "Handler not found!");
+//        it->second(events[i].events);
+//      }
     }
   }
 }
