@@ -35,8 +35,6 @@ EventLoop::~EventLoop() {
 void EventLoop::add(uint32_t events, EventData *event_data) const {
   struct epoll_event ev{};
   ev.events = events | EPOLLONESHOT;
-//  ev.events = events;
-//  ev.data.fd = fd;
   ev.data.ptr = event_data;
   if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl failed");
@@ -58,11 +56,11 @@ void EventLoop::add(uint32_t events, EventData *event_data) const {
 void EventLoop::rearm(uint32_t event, EventData *event_data) const {
   epoll_event ev{};
   ev.events = event | EPOLLONESHOT;
-//  ev.events = event;
-//  ev.data.fd = fd;
   ev.data.ptr = event_data;
   if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl rearm failed");
+    close(_epoll_fd);
+    close(_exit_loop_fd);
     exit(EXIT_FAILURE);
   }
 }
@@ -106,13 +104,6 @@ void EventLoop::run() {
       auto *handler = static_cast<ReadEventHandler *>(event_data->handler_obj);
       handler->handle_read_event(events[i].events);
       rearm(EPOLLIN, event_data);
-
-//      {
-//        std::unique_lock<std::mutex> _handlers_lock(_handlers_mutex);
-//        auto it = _handlers.find(events[i].data.fd);
-//        assert(it != _handlers.end() && "Handler not found!");
-//        it->second(events[i].events);
-//      }
     }
   }
 }
