@@ -33,6 +33,9 @@ private:
     std::mutex _outfile_mutex;
     std::ofstream _outfile;
     size_t _n_messages;
+    std::atomic<bool> _stop{false};
+    std::mutex _stop_mutex;
+    std::condition_variable _stop_cv;
 
     void run_sender(const Config& cfg);
     void run_receiver(const Config& cfg);

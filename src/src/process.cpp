@@ -11,8 +11,10 @@
 Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
                  const std::vector<Parser::Host>& hosts, const Config &cfg,
                  const std::string& outfname)
-        : _pid(pid), _addr(addr), _port(port), _hosts(hosts), _outfile(outfname),
+        : _pid(pid), _addr(addr), _port(port), _hosts(hosts), _outfile(outfname, std::ios::out | std::ios::trunc),
           _n_messages(cfg.num_messages() * (_hosts.size() - 1)) {
+
+  std::cerr << "Expecting " << _n_messages << " messages" << std::endl;
 
   if (cfg.receiver_proc() != _pid) {
     _pl = new PerfectLink(pid, _addr, _port, true, _hosts, cfg.receiver_proc(),
@@ -36,6 +38,7 @@ Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
 }
 
 Process::~Process() {
+  std::cerr << "Goodbye from process " << _pid << std::endl;
   _thread_pool->stop();
   _outfile.close();
   delete _pl;
@@ -57,10 +60,13 @@ void Process::run(const Config& cfg) {
 void Process::stop() {
   {
     std::lock_guard<std::mutex> lock(_outfile_mutex);
+    std::cerr << "Flushing output file" << std::endl;
     _outfile.flush();
   }
   _pl->stop();
   _event_loop.stop();
+  _stop.store(true);
+  _stop_cv.notify_all();
 }
 
 EventLoop& Process::event_loop() {
@@ -82,6 +88,12 @@ void Process::run_sender(const Config& cfg) {
   assert(found);
 
   _pl->send(cfg.num_messages(), cfg.receiver_proc(), _outfile, _outfile_mutex);
+
+  // Wait until stop is called.
+  {
+    std::unique_lock<std::mutex> syn_lock(_stop_mutex);
+    _stop_cv.wait(syn_lock, [this] { return _stop.load(); });
+  }
 }
 
 void Process::run_receiver(const Config& cfg) {
@@ -106,7 +118,8 @@ void Process::receiver_deliver_callback(const Packet& pkt) {
     assert(_n_messages > 0);
     --_n_messages;
     if (_n_messages == 0) {
-      std::cerr << "[DEBUG] Process " << _pid << " received all messages!" << std::endl;
+      std::cerr << "Process " << _pid << " received all messages!" << std::endl;
     }
   }
+//  _outfile.flush();
 }

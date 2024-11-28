@@ -44,3 +44,9 @@ struct PacketEqual {
       return lhs.seq_id() == rhs.seq_id();
     }
 };
+
+struct PacketLess {
+    bool operator()(const Packet& lhs, const Packet& rhs) const {
+      return std::less<uint32_t>()(lhs.seq_id(), rhs.seq_id());
+    }
+};

@@ -9,8 +9,9 @@
 StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            in_addr_t paddr, uint16_t pport,
                            bool sender, EventLoop& event_loop, DeliverCallback deliver_cb) :
-                           _socket(addr, port), _sender(sender), _event_loop(event_loop),
-                           _deliver_cb(std::move(deliver_cb)), _pid(pid), _stop(false) {
+                           _socket(addr, port), _sender(sender),
+                           _deliver_cb(std::move(deliver_cb)),
+                           _pid(pid), _stop(false) {
 
   struct sockaddr_in peer_addr{};
   peer_addr.sin_family = AF_INET;
@@ -18,50 +19,13 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   peer_addr.sin_addr.s_addr = paddr;
   _socket.conn(peer_addr);
 
-  _read_event_handler = new ReadEventHandler(&_socket, &event_loop,
+  _read_event_handler = new ReadEventHandler(&_socket,
                                              [this](const Packet& pkt) { this->process_packet(pkt); });
   _read_event_data.fd = _socket.infd();
   _read_event_data.handler_obj = _read_event_handler;
 
   event_loop.add(EPOLLIN, &_read_event_data);
-
-//  event_loop.add(_socket.infd(), EPOLLIN, [this](uint32_t events) {
-//      read_event_handler(events);
-//  });
 }
-
-//void StubbornLink::read_event_handler(uint32_t events) {
-//  if (events & EPOLLIN) {
-//    // Data is available to read.
-//    std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
-//    while (true) {
-//      buffer.resize(RECV_BUF_SIZE);
-//      ssize_t nrecv = _socket.recv_buf(buffer);
-//      if (nrecv == -1) {
-//        if (errno == EWOULDBLOCK) {
-//          // No more data to read.
-//          _event_loop.rearm(_socket.infd(), EPOLLIN);
-//          break;
-//        }
-//        std::string err_msg = "recv() failed. Error message: ";
-//        err_msg += strerror(errno);
-//        perror(err_msg.c_str());
-//        exit(EXIT_FAILURE);
-//      }
-//      if (nrecv == 0) {
-//        _event_loop.rearm(_socket.infd(), EPOLLIN);
-//        continue;
-//      }
-//      // Process the received data.
-//      Packet pkt;
-//      buffer.resize(static_cast<size_t>(nrecv));
-//      pkt.deserialize(buffer);
-//      process_packet(pkt);
-//
-//      _event_loop.rearm(_socket.infd(), EPOLLIN);
-//    }
-//  }
-//}
 
 void StubbornLink::process_packet(const Packet& pkt) {
   switch (pkt.packet_type()) {
@@ -108,7 +72,9 @@ void StubbornLink::process_packet(const Packet& pkt) {
   }
 }
 
-void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex) {
+void StubbornLink::store_and_output_messages(uint32_t n_messages,
+                                             std::ofstream &outfile,
+                                             std::mutex &outfile_mutex) {
   // Send 8 messages at a single packet.
   std::vector<std::string> output_buffers;
   {
@@ -136,68 +102,67 @@ void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex 
     }
     outfile.flush();
   }
+}
 
+// Sliding window approach.
+void StubbornLink::send_unacked_messages() {
   const int initial_interval_ms = 50;
   const int max_interval_ms = 1000;
+  int timeout_interval_ms = initial_interval_ms;
+  const uint32_t sliding_window_size = 300;  // Sliding window size
 
-  uint32_t threshold = 1;
-  uint32_t initial_window_size = 300;
-  int current_interval_ms = initial_interval_ms;
-  uint32_t window_size = initial_window_size;
-
-  // Wait for receiver to start.
+  // Wait for the receiver to start (SYN received).
   {
     std::unique_lock<std::mutex> syn_lock(_syn_mutex);
     _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
   }
 
+  // Main retransmission loop
   while (!_stop.load()) {
     std::vector<Packet> packets_to_send;
+
     {
+      // Lock and populate packets_to_send with the sliding window size
       std::unique_lock<std::mutex> lock(_unacked_mutex);
       if (unacked_packets.empty()) {
-        break;
+        _stop.store(true);
+        std::cerr << "No more unacknowledged packets. Exiting..." << std::endl;
+        continue;  // Exit if there are no unacknowledged packets
       }
-      for (const auto& pkt : unacked_packets) {
-        packets_to_send.push_back(pkt);
+
+      auto it = unacked_packets.begin();
+      for (size_t i = 0; i < sliding_window_size && it != unacked_packets.end(); ++i, ++it) {
+        packets_to_send.push_back(*it);
       }
     }
 
-    uint32_t packets_sent = 0;
+    // Send packets in the current sliding window
     for (const auto& pkt : packets_to_send) {
-      if (packets_sent >= window_size) {
-        window_size = initial_window_size;
-        current_interval_ms = initial_interval_ms;
-        std::cerr << "Current interval ms set to initial: " << current_interval_ms << std::endl;
-        break;
-      }
-
       auto pkt_serialized = pkt.serialize();
 
       ssize_t nsent = _socket.send_buf(pkt_serialized);
       if (nsent == -1) {
-        if (errno == ECONNREFUSED) {
-          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
-          std::cerr << "Current interval ms increased to " << current_interval_ms << std::endl;
-        } else if (errno == EWOULDBLOCK) {
-          // Buffer is full. Reduce window size.
-          current_interval_ms = std::min(backoff_interval(current_interval_ms), max_interval_ms);
-          std::cerr << "Current interval ms increased to " << current_interval_ms << std::endl;
-          window_size /= 2;
-          if (window_size <= threshold) {
-            window_size = threshold;
-          }
-          break;
+        if (errno == ECONNREFUSED || errno == EWOULDBLOCK) {
+          // If an error occurs, wait for the timeout before retrying
+          timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms), max_interval_ms);
+//          std::cerr << "Current interval ms increased to " << timeout_interval_ms << std::endl;
         } else {
           perror("send failed");
+          exit(EXIT_FAILURE);
         }
-      } else {
-        packets_sent++;
       }
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(current_interval_ms));
+    std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
   }
+
+  std::cerr << "Exiting send_unacked_messages..." << std::endl;
+}
+
+void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex) {
+  store_and_output_messages(n_messages, outfile, outfile_mutex);
+
+  send_unacked_messages();
 }
 
 bool StubbornLink::send_syn_packet() {

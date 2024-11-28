@@ -73,7 +73,7 @@ static int run_process(Parser &parser, const Config& cfg) {
   std::cerr << "I am process with id: " << process.pid() << std::endl;
 
   process.run(cfg);
-  process.stop();
+//  process.stop();
 
   return 0;
 }

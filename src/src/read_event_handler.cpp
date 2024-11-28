@@ -1,9 +1,9 @@
 #include <cstring>
+#include <iostream>
 #include "read_event_handler.hpp"
 
-ReadEventHandler::ReadEventHandler(UDPSocket *socket, EventLoop *event_loop,
-                                   DeliverCallback process_pkt_callback) :
-                                   _socket(socket), _event_loop(event_loop),
+ReadEventHandler::ReadEventHandler(UDPSocket *socket, DeliverCallback process_pkt_callback) :
+                                   _socket(socket),
                                    _process_pkt_callback(std::move(process_pkt_callback)) {}
 
 void ReadEventHandler::handle_read_event(uint32_t events) {
@@ -14,7 +14,7 @@ void ReadEventHandler::handle_read_event(uint32_t events) {
       buffer.resize(RECV_BUF_SIZE);
       ssize_t nrecv = _socket->recv_buf(buffer);
       if (nrecv == -1) {
-        if (errno == EWOULDBLOCK) {
+        if (errno == EWOULDBLOCK || errno == ECONNREFUSED) {
           break;
         }
         std::string err_msg = "recv() failed. Error message: ";
