@@ -150,6 +150,8 @@ void StubbornLink::send_unacked_messages() {
           perror("send failed");
           exit(EXIT_FAILURE);
         }
+      } else {
+        timeout_interval_ms = initial_interval_ms;
       }
     }
 
