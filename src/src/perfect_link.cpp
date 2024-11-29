@@ -3,37 +3,24 @@
 #include "perfect_link.hpp"
 #include "packet.hpp"
 
-PerfectLink::PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port, bool sender,
-                         const std::vector<Parser::Host>& hosts, uint64_t receiver_proc,
-                         EventLoop& event_loop, DeliverCallback deliver_cb) :
-                         _addr(addr), _port(port), _sender(sender) {
+PerfectLink::PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port,
+                         const std::vector<Parser::Host>& hosts, EventLoop& event_loop,
+                         DeliverCallback deliver_cb) {
   {
     std::lock_guard<std::mutex> lock(_delivered_mutex);
     _deliver_cb = std::move(deliver_cb);
   }
 
-  if (sender) {
-    // Connect only to receiver.
-    for (const auto& host : hosts) {
-      if (host.id == receiver_proc) {
-        _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port,
-                                            sender, event_loop, [this](const Packet& pkt) {
-          this->deliver_packet(pkt);
-        });
-        break;
-      }
+  for (const auto& host : hosts) {
+    if (host.id == pid) {
+      // NOTE(kostas): Does it make sense to connect to ourselves?
+      continue;
     }
-  } else {
-    // Receiver. Connect to all hosts except ourselves.
-    for (const auto& host : hosts) {
-      if (host.id == pid) {
-        continue;
-      }
-      _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port, sender, event_loop,
-                                          [this](const Packet& pkt) {
-                                              this->deliver_packet(pkt);
-                                          });
-    }
+    std::cerr << "Connecting to host: " << host.id << std::endl;
+    _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port, event_loop,
+                                        [this](const Packet& pkt) {
+                                            this->deliver_packet(pkt);
+                                        });
   }
 }
 
@@ -44,24 +31,21 @@ PerfectLink::~PerfectLink() {
 }
 
 void PerfectLink::deliver_packet(const Packet& pkt) {
-  if (!_sender) {
-    auto p = std::make_pair(pkt.pid(), pkt.seq_id());
-    {
-      std::lock_guard<std::mutex> lock(_delivered_mutex);
-      if (_delivered.find(p) != _delivered.end()) {
-        return;
-      }
-      _delivered.insert(p);
-
+  auto p = std::make_pair(pkt.pid(), pkt.seq_id());
+  {
+    std::lock_guard<std::mutex> lock(_delivered_mutex);
+    if (_delivered.find(p) != _delivered.end()) {
+      return;
     }
-    _deliver_cb(pkt);
+    _delivered.insert(p);
+
   }
+  _deliver_cb(pkt);
 }
 
-void PerfectLink::send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile, std::mutex &outfile_mutex) {
+void PerfectLink::send(const std::vector<Packet> &packets, uint64_t peer) {
 //  _sl->send(p, addr);
-//  std::cerr << "[DEBUG] Sending to peer " << peer << std::endl;
-  _sl_map[peer]->send(n_messages, outfile, outfile_mutex);
+  _sl_map[peer]->send(packets);
 }
 
 void PerfectLink::send_syn_packets() {

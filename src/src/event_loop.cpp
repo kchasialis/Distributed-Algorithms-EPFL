@@ -24,7 +24,8 @@ EventLoop::EventLoop() : _running(true) {
 
   // Add the wakeup file descriptor to epoll for monitoring
   _exit_loop_data.fd = _exit_loop_fd;
-  add(EPOLLIN, &_exit_loop_data);
+  _exit_loop_data.events = EPOLLIN;
+  add(&_exit_loop_data);
 }
 
 EventLoop::~EventLoop() {
@@ -32,9 +33,9 @@ EventLoop::~EventLoop() {
   close(_epoll_fd);
 }
 
-void EventLoop::add(uint32_t events, EventData *event_data) const {
+void EventLoop::add(EventData *event_data) const {
   struct epoll_event ev{};
-  ev.events = events | EPOLLONESHOT;
+  ev.events = event_data->events | EPOLLONESHOT;
   ev.data.ptr = event_data;
   if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl failed");
@@ -53,9 +54,9 @@ void EventLoop::add(uint32_t events, EventData *event_data) const {
  * specified, it is the caller's responsibility to rearm the file
  * descriptor using epoll_ctl(2) with EPOLL_CTL_MOD.
  * */
-void EventLoop::rearm(uint32_t event, EventData *event_data) const {
+void EventLoop::rearm(EventData *event_data) const {
   epoll_event ev{};
-  ev.events = event | EPOLLONESHOT;
+  ev.events = event_data->events | EPOLLONESHOT;
   ev.data.ptr = event_data;
   if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, event_data->fd, &ev) == -1) {
     perror("epoll_ctl rearm failed");
@@ -80,7 +81,7 @@ void EventLoop::run() {
     for (int i = 0; i < nfds; i++) {
       auto *event_data = static_cast<EventData *>(events[i].data.ptr);
       if (events[i].events & EPOLLERR) {
-        rearm(EPOLLIN, event_data);
+        rearm(event_data);
         continue;
       }
 
@@ -90,7 +91,7 @@ void EventLoop::run() {
         if (read(_exit_loop_fd, &u, sizeof(u)) == -1) {
           break;
         }
-        rearm(EPOLLIN, event_data);
+        rearm(event_data);
 
         // Write to wakeup file descriptor to unblock epoll_wait
         u = 1;
@@ -100,10 +101,17 @@ void EventLoop::run() {
         continue;
       }
 
-      // Call the handler
-      auto *handler = static_cast<ReadEventHandler *>(event_data->handler_obj);
-      handler->handle_read_event(events[i].events);
-      rearm(EPOLLIN, event_data);
+      if (events[i].events & EPOLLIN) {
+        // Data is available to read.
+        auto *handler = static_cast<ReadEventHandler *>(event_data->handler_obj);
+        handler->handle_read_event(events[i].events);
+        rearm(event_data);
+      } else if (events[i].events & EPOLLOUT) {
+        // Data is available to write.
+        auto *handler = static_cast<WriteEventHandler *>(event_data->handler_obj);
+        handler->handle_write_event(events[i].events);
+        rearm(event_data);
+      }
     }
   }
 }

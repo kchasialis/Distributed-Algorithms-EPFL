@@ -1,13 +1,14 @@
 #include <cstring>
 #include <iostream>
-#include "read_event_handler.hpp"
+#include "event_handler.hpp"
 
-ReadEventHandler::ReadEventHandler(UDPSocket *socket, DeliverCallback process_pkt_callback) :
+ReadEventHandler::ReadEventHandler(UDPSocket *socket, ReadCallback process_pkt_callback) :
                                    _socket(socket),
                                    _process_pkt_callback(std::move(process_pkt_callback)) {}
 
 void ReadEventHandler::handle_read_event(uint32_t events) {
   if (events & EPOLLIN) {
+    std::cerr << "Handling read event" << std::endl;
     // Data is available to read.
     std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
     while (true) {
@@ -31,5 +32,14 @@ void ReadEventHandler::handle_read_event(uint32_t events) {
       pkt.deserialize(buffer);
       _process_pkt_callback(pkt);
     }
+  }
+}
+
+WriteEventHandler::WriteEventHandler(WriteCallback send_pkts_callback) :
+                                     _send_pkts_callback(std::move(send_pkts_callback)) {}
+
+void WriteEventHandler::handle_write_event(uint32_t events) {
+  if (events & EPOLLOUT) {
+    _send_pkts_callback();
   }
 }

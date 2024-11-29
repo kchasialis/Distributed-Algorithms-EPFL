@@ -6,12 +6,14 @@ set(SOURCES src/main.cpp
             src/stubborn_link.cpp
             src/perfect_link.cpp
         src/packet.cpp
-            src/process.cpp
+#        src/process_pl.cpp
             src/config.cpp
         src/thread_pool.cpp
         src/udp_socket.cpp
         src/event_loop.cpp
-src/read_event_handler.cpp)
+        src/event_handler.cpp
+src/process_fifo.cpp
+)
 
 # DO NOT EDIT THE FOLLOWING LINES
 find_package(Threads)

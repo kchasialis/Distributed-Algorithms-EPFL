@@ -8,9 +8,8 @@
 
 StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            in_addr_t paddr, uint16_t pport,
-                           bool sender, EventLoop& event_loop, DeliverCallback deliver_cb) :
-                           _socket(addr, port), _sender(sender),
-                           _deliver_cb(std::move(deliver_cb)),
+                           EventLoop& event_loop, DeliverCallback deliver_cb) :
+                           _socket(addr, port), _deliver_cb(std::move(deliver_cb)),
                            _pid(pid), _stop(false) {
 
   struct sockaddr_in peer_addr{};
@@ -21,10 +20,17 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
 
   _read_event_handler = new ReadEventHandler(&_socket,
                                              [this](const Packet& pkt) { this->process_packet(pkt); });
+  _read_event_data.events = EPOLLIN;
   _read_event_data.fd = _socket.infd();
   _read_event_data.handler_obj = _read_event_handler;
 
-  event_loop.add(EPOLLIN, &_read_event_data);
+  _write_event_handler = new WriteEventHandler([this] { this->send_unacked_packets(); });
+  _write_event_data.events = EPOLLOUT;
+  _write_event_data.fd = _socket.outfd();
+  _write_event_data.handler_obj = _write_event_handler;
+
+  event_loop.add(&_read_event_data);
+  event_loop.add(&_write_event_data);
 }
 
 void StubbornLink::process_packet(const Packet& pkt) {
@@ -50,16 +56,20 @@ void StubbornLink::process_packet(const Packet& pkt) {
         _syn_ack_received.store(true);
       } else {
         std::lock_guard<std::mutex> lock(_unacked_mutex);
-        unacked_packets.erase(pkt);
+        _unacked_packets.erase(pkt);
       }
+      std::cerr << "ACK received for packet with seq_id: " << pkt.seq_id() << std::endl;
       break;
     }
     case PacketType::DATA:
     {
+      std::cerr << "Data packet received with seq_id: " << pkt.seq_id() << std::endl;
       // It is a data packet.
 
       // Deliver the data packet.
       _deliver_cb(pkt);
+
+      std::cerr << "Sending ACK for packet with seq_id: " << pkt.seq_id() << std::endl;
 
       // Send an ACK.
       Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
@@ -72,50 +82,56 @@ void StubbornLink::process_packet(const Packet& pkt) {
   }
 }
 
-void StubbornLink::store_and_output_messages(uint32_t n_messages,
-                                             std::ofstream &outfile,
-                                             std::mutex &outfile_mutex) {
-  // Send 8 messages at a single packet.
-  std::vector<std::string> output_buffers;
+void StubbornLink::store_packets(const std::vector<Packet> &packets) {
   {
     std::lock_guard<std::mutex> lock(_unacked_mutex);
-    uint32_t current_seq_id = 1;
-    for (uint32_t i = 0; i < n_messages; i += 8) {
-      uint32_t packet_size = std::min(8U, n_messages - i);
-      std::vector<uint8_t> data(packet_size * sizeof(uint32_t));
-      for (uint32_t j = 0; j < packet_size; j++) {
-        std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id,
-                    sizeof(uint32_t));
-        output_buffers.push_back("b " + std::to_string(current_seq_id) + "\n");
-        current_seq_id++;
-      }
-
-      Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
-      unacked_packets.insert(p);
+    for (const auto &pkt: packets) {
+      _unacked_packets.insert(pkt);
     }
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(outfile_mutex);
-    for (const auto& buffer : output_buffers) {
-      outfile << buffer;
-    }
-    outfile.flush();
   }
 }
 
+//  // Send 8 messages at a single packet.
+//  std::vector<std::string> output_buffers;
+//  {
+//    std::lock_guard<std::mutex> lock(_unacked_mutex);
+//    uint32_t current_seq_id = 1;
+//    for (uint32_t i = 0; i < n_messages; i += 8) {
+//      uint32_t packet_size = std::min(8U, n_messages - i);
+//      std::vector<uint8_t> data(packet_size * sizeof(uint32_t));
+//      for (uint32_t j = 0; j < packet_size; j++) {
+//        std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id,
+//                    sizeof(uint32_t));
+//        output_buffers.push_back("b " + std::to_string(current_seq_id) + "\n");
+//        current_seq_id++;
+//      }
+//
+//      Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
+//      unacked_packets.insert(p);
+//    }
+//  }
+//
+//  {
+//    std::lock_guard<std::mutex> lock(outfile_mutex);
+//    for (const auto& buffer : output_buffers) {
+//      outfile << buffer;
+//    }
+//    outfile.flush();
+//  }
+//}
+
 // Sliding window approach.
-void StubbornLink::send_unacked_messages() {
+void StubbornLink::send_unacked_packets() {
   const int initial_interval_ms = 50;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
   const uint32_t sliding_window_size = 300;  // Sliding window size
 
-  // Wait for the receiver to start (SYN received).
-  {
-    std::unique_lock<std::mutex> syn_lock(_syn_mutex);
-    _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
-  }
+//  // Wait for the receiver to start (SYN received).
+//  {
+//    std::unique_lock<std::mutex> syn_lock(_syn_mutex);
+//    _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
+//  }
 
   // Main retransmission loop
   while (!_stop.load()) {
@@ -124,28 +140,32 @@ void StubbornLink::send_unacked_messages() {
     {
       // Lock and populate packets_to_send with the sliding window size
       std::unique_lock<std::mutex> lock(_unacked_mutex);
-      if (unacked_packets.empty()) {
-        _stop.store(true);
-        std::cerr << "No more unacknowledged packets. Exiting..." << std::endl;
-        continue;  // Exit if there are no unacknowledged packets
+      if (_unacked_packets.empty()) {
+//        _stop.store(true);
+        return;  // Exit if there are no unacknowledged packets
       }
 
-      auto it = unacked_packets.begin();
-      for (size_t i = 0; i < sliding_window_size && it != unacked_packets.end(); ++i, ++it) {
+      auto it = _unacked_packets.begin();
+      for (size_t i = 0; i < sliding_window_size && it != _unacked_packets.end(); ++i, ++it) {
         packets_to_send.push_back(*it);
       }
     }
 
     // Send packets in the current sliding window
     for (const auto& pkt : packets_to_send) {
+
       auto pkt_serialized = pkt.serialize();
 
       ssize_t nsent = _socket.send_buf(pkt_serialized);
       if (nsent == -1) {
-        if (errno == ECONNREFUSED || errno == EWOULDBLOCK) {
-          // If an error occurs, wait for the timeout before retrying
-          timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms), max_interval_ms);
-//          std::cerr << "Current interval ms increased to " << timeout_interval_ms << std::endl;
+        if (errno == EWOULDBLOCK) {
+          // Socket buffer full.
+          timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms),
+                                         max_interval_ms);
+        }
+        else if (errno == ECONNREFUSED) {
+          // Receiver is not up and running.
+          return;
         } else {
           perror("send failed");
           exit(EXIT_FAILURE);
@@ -158,14 +178,23 @@ void StubbornLink::send_unacked_messages() {
     std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
   }
 
-  std::cerr << "Exiting send_unacked_messages..." << std::endl;
+//  std::cerr << "Exiting send_unacked_packets..." << std::endl;
 }
 
-void StubbornLink::send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex) {
-  store_and_output_messages(n_messages, outfile, outfile_mutex);
-
-  send_unacked_messages();
+void StubbornLink::send(const std::vector<Packet> &packets) {
+  store_packets(packets);
+//  send_unacked_packets();
 }
+
+//void StubbornLink::send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex) {
+//  // NOTE(kostas): See when to output.
+//  {
+//    std::lock_guard<std::mutex> lock(_unacked_mutex);
+//    unacked_packets.insert(pkt);
+//  }
+//
+//  send_unacked_packets();
+//}
 
 bool StubbornLink::send_syn_packet() {
   if (_syn_ack_received.load()) {

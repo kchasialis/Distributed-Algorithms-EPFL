@@ -64,3 +64,7 @@ void Packet::deserialize(const std::vector<uint8_t> &buffer) {
   _data.resize(data_size);
   std::memcpy(_data.data(), buffer.data() + offset, data_size);
 }
+
+bool Packet::operator==(const Packet& rhs) const {
+  return _seq_id == rhs._seq_id;
+}

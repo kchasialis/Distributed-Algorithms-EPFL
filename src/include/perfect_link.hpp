@@ -20,9 +20,6 @@ private:
       }
   };
 
-  in_addr_t _addr;
-  uint16_t _port;
-  bool _sender;
   std::mutex _delivered_mutex;
   std::unordered_set<delivered_t, PairHash> _delivered;
   DeliverCallback _deliver_cb;
@@ -31,13 +28,17 @@ private:
 
   void deliver_packet(const Packet& pkt);
 public:
-  PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port, bool sender,
-              const std::vector<Parser::Host>& hosts, uint64_t receiver_proc,
-              EventLoop& event_loop, DeliverCallback deliver_cb);
+//  PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port, bool sender,
+//              const std::vector<Parser::Host>& hosts, uint64_t receiver_proc,
+//              EventLoop& event_loop, DeliverCallback deliver_cb);
+  PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port,
+              const std::vector<Parser::Host>& hosts, EventLoop& event_loop,
+              DeliverCallback deliver_cb);
   ~PerfectLink();
 
-  void send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile,
-            std::mutex &outfile_mutex);
+//  void send(uint32_t n_messages, uint64_t peer, std::ofstream &outfile,
+//            std::mutex &outfile_mutex);
+  void send(const std::vector<Packet> &packets, uint64_t peer);
   void send_syn_packets();
   void stop();
 };

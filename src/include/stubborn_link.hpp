@@ -14,7 +14,7 @@
 #include "packet.hpp"
 #include "event_loop.hpp"
 #include "parser.hpp"
-#include "read_event_handler.hpp"
+#include "event_handler.hpp"
 
 using DeliverCallback = std::function<void(const Packet& pkt)>;
 
@@ -24,21 +24,24 @@ class StubbornLink {
 public:
   StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                in_addr_t paddr, uint16_t pport,
-               bool sender, EventLoop &event_loop, DeliverCallback _deliver_cb);
+               EventLoop &event_loop, DeliverCallback _deliver_cb);
 
-  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
+//  void send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex);
+//  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
+  void send(const std::vector<Packet> &packets);
   bool send_syn_packet();
   void stop();
 private:
   UDPSocket _socket;
   bool _sender;
-  std::set<Packet, PacketLess> unacked_packets;
+  std::set<Packet, PacketLess> _unacked_packets;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
   uint64_t _pid;
   ReadEventHandler *_read_event_handler;
   EventData _read_event_data{};
-
+  WriteEventHandler *_write_event_handler;
+  EventData _write_event_data{};
 
   std::condition_variable _syn_received_cv;
   std::mutex _syn_mutex;
@@ -50,8 +53,9 @@ private:
   std::atomic<bool> _syn_ack_received{false};
   std::default_random_engine _random_engine{std::random_device{}()};
 
-  void send_unacked_messages();
+  void send_unacked_packets();
   void process_packet(const Packet &pkt);
-  void store_and_output_messages(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
+//  void store_and_output_messages(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
+  void store_packets(const std::vector<Packet> &packets);
   int backoff_interval(int timeout);
 };

@@ -5,11 +5,11 @@
 #include <unistd.h>
 #include <fstream>
 #include <cassert>
-#include "process.hpp"
+#include "process_pl.hpp"
 #include "perfect_link.hpp"
 
 Process::Process(uint64_t pid, in_addr_t addr, uint16_t port,
-                 const std::vector<Parser::Host>& hosts, const Config &cfg,
+                 const std::vector<Parser::Host>& hosts, const FifoConfig &cfg,
                  const std::string& outfname)
         : _pid(pid), _addr(addr), _port(port), _hosts(hosts), _outfile(outfname, std::ios::out | std::ios::trunc),
           _n_messages(cfg.num_messages() * (_hosts.size() - 1)) {

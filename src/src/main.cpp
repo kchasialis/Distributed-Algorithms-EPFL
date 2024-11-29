@@ -5,7 +5,7 @@
 
 #include "config.hpp"
 #include "parser.hpp"
-#include "process.hpp"
+#include "process_fifo.hpp"
 
 std::mutex signal_handler_mutex;
 std::function<void()> signal_handler;
@@ -29,7 +29,7 @@ static void register_signals() {
   signal(SIGINT, stop);
 }
 
-static Config read_config_file(const std::string &configPath) {
+static PlConfig read_config_file_pl(const std::string &configPath) {
   std::ifstream config_file(configPath);
   if (!config_file) {
     std::cerr << "Failed to open config file: " << configPath << std::endl;
@@ -45,7 +45,23 @@ static Config read_config_file(const std::string &configPath) {
   return {n_messages, receiver_proc};
 }
 
-static int run_process(Parser &parser, const Config& cfg) {
+static FifoConfig read_config_file_fifo(const std::string &configPath) {
+  std::ifstream config_file(configPath);
+  if (!config_file) {
+    std::cerr << "Failed to open config file: " << configPath << std::endl;
+    exit(1);
+  }
+
+  uint32_t n_messages;
+  if (!(config_file >> n_messages)) {
+    std::cerr << "Failed to read config values from: " << configPath << std::endl;
+    exit(1);
+  }
+
+  return {n_messages};
+}
+
+static int run_process(Parser &parser, const FifoConfig& cfg) {
   Parser::Host current_host;
   bool found = false;
   for (const auto &host: parser.hosts()) {
@@ -60,8 +76,10 @@ static int run_process(Parser &parser, const Config& cfg) {
     return 1;
   }
 
-  Process process(parser.id(), current_host.ip, current_host.port,
-                  parser.hosts(), cfg, parser.outputPath());
+  std::cerr << "I am process with id: " << parser.id() << std::endl;
+
+  ProcessFifo process(parser.id(), current_host.ip, current_host.port,
+                      parser.hosts(), cfg, parser.outputPath());
 
 //  {
 //    std::lock_guard<std::mutex> lock(signal_handler_mutex);
@@ -69,8 +87,6 @@ static int run_process(Parser &parser, const Config& cfg) {
 //  }
 
   signal_handler = [&process]() { process.stop(); };
-
-  std::cerr << "I am process with id: " << process.pid() << std::endl;
 
   process.run(cfg);
 //  process.stop();
@@ -82,7 +98,7 @@ int main(int argc, char **argv) {
   register_signals();
   Parser parser(argc, argv);
   parser.parse();
-  Config cfg = read_config_file(parser.configPath());
+  FifoConfig cfg = read_config_file_fifo(parser.configPath());
 
   int err = run_process(parser, cfg);
   if (err != 0) {

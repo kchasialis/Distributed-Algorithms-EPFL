@@ -30,6 +30,8 @@ public:
     const std::vector<uint8_t>& data() const;
     std::vector<uint8_t> serialize() const;
     void deserialize(const std::vector<uint8_t>& buffer);
+
+    bool operator==(const Packet& rhs) const;
 };
 
 struct PacketHash {

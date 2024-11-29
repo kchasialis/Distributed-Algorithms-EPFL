@@ -10,6 +10,7 @@
 
 struct EventData {
     int fd;
+    uint32_t events;
     void *handler_obj;
 };
 
@@ -23,8 +24,8 @@ private:
 public:
     EventLoop();
     ~EventLoop();
-    void add(uint32_t events, EventData *event_data) const;
-    void rearm(uint32_t event, EventData *event_data) const;
+    void add(EventData *event_data) const;
+    void rearm(EventData *event_data) const;
     void run();
     void stop();
 };
