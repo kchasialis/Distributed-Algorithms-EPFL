@@ -11,21 +11,17 @@
 ProcessFifo::ProcessFifo(uint64_t pid, in_addr_t addr, uint16_t port,
                          const std::vector<Parser::Host>& hosts, const FifoConfig &cfg,
                          const std::string& outfname)
-        : _pid(pid), _addr(addr), _port(port), _hosts(hosts), _outfile(outfname, std::ios::out | std::ios::trunc),
-          _n_messages(cfg.num_messages() * (_hosts.size() - 1)) {
+        : _pid(pid), _addr(addr), _port(port), _outfile(outfname, std::ios::out | std::ios::trunc),
+          _n_delivered_messages(cfg.num_messages() * (hosts.size())) {
 
-  std::cerr << "Expecting " << _n_messages << " messages" << std::endl;
-
-  _pl = new PerfectLink(pid, _addr, _port, _hosts, _event_loop,
-                        [this](const Packet& pkt) {
-              this->deliver_callback(pkt);
-          });
+  std::cerr << "Expecting " << _n_delivered_messages << " messages" << std::endl;
 
   _thread_pool = new ThreadPool(8);
 
-  _thread_pool->enqueue([this] {
-      this->monitor_deliver();
-  });
+  _urb = new Urb(pid, addr, port, hosts, _event_loop, _thread_pool,
+                 [this](const Packet& pkt) {
+                   this->fifo_deliver(pkt);
+                 });
 
   for (uint32_t i = 0; i < event_loop_workers; i++) {
     _thread_pool->enqueue([this] {
@@ -38,8 +34,8 @@ ProcessFifo::~ProcessFifo() {
   std::cerr << "Goodbye from process " << _pid << std::endl;
   _thread_pool->stop();
   _outfile.close();
-  delete _pl;
   delete _thread_pool;
+  delete _urb;
 }
 
 uint64_t ProcessFifo::pid() const {
@@ -53,7 +49,7 @@ void ProcessFifo::stop() {
     _outfile.flush();
   }
   _stop.store(true);
-  _pl->stop();
+  _urb->stop();
   _event_loop.stop();
   _stop_cv.notify_all();
 }
@@ -84,15 +80,7 @@ void ProcessFifo::run(const FifoConfig& cfg) {
     _outfile.flush();
   }
 
-  {
-    std::lock_guard<std::mutex> lock(_pending_mutex);
-    for (const auto& pkt : packets) {
-      _pending.insert({pkt, _pid});
-    }
-  }
-
-  // "bebBroadcast"
-  broadcast(packets);
+  _urb->broadcast(packets);
 
   _event_loop.run();
 
@@ -103,100 +91,21 @@ void ProcessFifo::run(const FifoConfig& cfg) {
 //  }
 }
 
-void ProcessFifo::broadcast(const std::vector<Packet>& packets) {
-  // Deliver packets to self.
-  for (const auto& pkt : packets) {
-//    std::cerr << "Process " << _pid << " delivering packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
-    deliver_callback(pkt);
-  }
-
-  for (const auto& host : _hosts) {
-    if (host.id != _pid) {
-//      std::cerr << "Process " << _pid << " sending packets to " << host.id << std::endl;
-      _pl->send(packets, host.id);
-//      std::cerr << "Process " << _pid << " sent packets to " << host.id << std::endl;
-    }
-  }
-}
-
-// bebDeliver
-void ProcessFifo::deliver_callback(const Packet& pkt) {
-//  std::cerr << "Process " << _pid << " received packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
-  {
-    std::lock_guard<std::mutex> lock(_ack_proc_map_mutex);
-    auto it = _ack_proc_map.find(pkt);
-    if (it == _ack_proc_map.end()) {
-      _ack_proc_map[pkt] = std::unordered_set<uint64_t>();
-    }
-    _ack_proc_map[pkt].insert(pkt.pid());
-    std::cerr << "Process " << _pid << " received " << _ack_proc_map[pkt].size() << " acks for packet " << pkt.seq_id() << std::endl;
-  }
-
-  std::vector<Packet> packets;
-  {
-    std::lock_guard<std::mutex> lock(_pending_mutex);
-    pending_t pending_pkt = {pkt, pkt.pid()};
-    if (_pending.find(pending_pkt) == _pending.end()) {
-      _pending.insert(pending_pkt);
-//      std::cerr << "Process " << _pid << " added packet " << pkt.seq_id() << " to pending set" << std::endl;
-      packets.push_back(pkt);
-    }
-  }
-  if (!packets.empty()) {
-    broadcast(packets);
-  }
-}
-
-bool ProcessFifo::can_deliver(const Packet& pkt) {
-  std::lock_guard<std::mutex> lock(_ack_proc_map_mutex);
-  auto it = _ack_proc_map.find(pkt);
-  if (it == _ack_proc_map.end()) {
-    return false;
-  }
-  return it->second.size() > _hosts.size() / 2;
-}
-
-void ProcessFifo::do_deliver(const Packet& pkt) {
-  {
-    std::lock_guard lock(_delivered_mutex);
-    auto delivered = std::make_pair(pkt.pid(), pkt.seq_id());
-    if (_delivered.find(delivered) != _delivered.end()) {
-      return;
-    }
-    _delivered.insert(delivered);
-  }
-
-  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << std::endl;
+void ProcessFifo::fifo_deliver(const Packet& pkt) {
+//  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << std::endl;
   std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;
     std::memcpy(&seq_id, pkt.data().data() + i, sizeof(uint32_t));
     _outfile << "d " << pkt.pid() << " " << seq_id << "\n";
-    assert(_n_messages > 0);
-    --_n_messages;
-    if (_n_messages == 0) {
+    if (_n_delivered_messages == 0) {
+      std::cerr << "FATAL: Process " << _pid << " received more messages than expected!" << std::endl;
+      exit(1);
+    }
+    --_n_delivered_messages;
+    if (_n_delivered_messages == 0) {
       std::cerr << "Process " << _pid << " received all messages!" << std::endl;
     }
   }
 //  _outfile.flush();
-}
-
-void ProcessFifo::monitor_deliver() {
-//  std::cerr << "Process " << _pid << " started monitor_deliver" << std::endl;
-  while (!_stop.load()) {
-    std::vector<Packet> pending_packets;
-    {
-      std::lock_guard<std::mutex> lock(_pending_mutex);
-      for (const auto &pending: _pending) {
-        pending_packets.push_back(pending.pkt);
-      }
-    }
-
-    for (const auto &pkt: pending_packets) {
-      if (can_deliver(pkt)) {
-        do_deliver(pkt);
-      }
-    }
-  }
-//  std::cerr << "Process " << _pid << " stopped monitor_deliver" << std::endl;
 }

@@ -8,6 +8,7 @@
 #include "config.hpp"
 #include "event_loop.hpp"
 #include "thread_pool.hpp"
+#include "urb.hpp"
 
 constexpr uint32_t event_loop_workers = 7;
 
@@ -50,24 +51,13 @@ private:
     uint16_t _port;
     EventLoop _event_loop;
     ThreadPool *_thread_pool;
-    std::vector<Parser::Host> _hosts;
-    PerfectLink *_pl;
+    Urb *_urb;
     std::mutex _outfile_mutex;
     std::ofstream _outfile;
-    size_t _n_messages;
+    size_t _n_delivered_messages;
     std::atomic<bool> _stop{false};
     std::mutex _stop_mutex;
     std::condition_variable _stop_cv;
-    std::unordered_map<Packet, std::unordered_set<uint64_t>, PacketHash, PacketEqual> _ack_proc_map;
-    std::mutex _ack_proc_map_mutex;
-    std::unordered_set<pending_t, PendingHash, PendingEqual> _pending;
-    std::mutex _pending_mutex;
-    std::unordered_set<delivered_t, DeliveredHash, DeliveredEqual> _delivered;
-    std::mutex _delivered_mutex;
 
-    void broadcast(const std::vector<Packet>& packets);
-    void deliver_callback(const Packet& pkt);
-    bool can_deliver(const Packet& pkt);
-    void do_deliver(const Packet& pkt);
-    void monitor_deliver();
+    void fifo_deliver(const Packet& pkt);
 };

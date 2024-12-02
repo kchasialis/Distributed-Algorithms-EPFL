@@ -13,6 +13,7 @@ set(SOURCES src/main.cpp
         src/event_loop.cpp
         src/event_handler.cpp
 src/process_fifo.cpp
+src/urb.cpp
 )
 
 # DO NOT EDIT THE FOLLOWING LINES
