@@ -28,6 +28,11 @@ ProcessFifo::ProcessFifo(uint64_t pid, in_addr_t addr, uint16_t port,
         this->_event_loop.run();
     });
   }
+
+  // Start a worker that runs the monitor_deliver function.
+  _thread_pool->enqueue([this] {
+      this->monitor_deliver();
+  });
 }
 
 ProcessFifo::~ProcessFifo() {
@@ -83,7 +88,10 @@ void ProcessFifo::run(const FifoConfig& cfg) {
     }
   }
 
+  // "bebBroadcast"
   broadcast(packets);
+
+  _event_loop.run();
 
   // Wait until stop is called.
   {
@@ -107,6 +115,7 @@ void ProcessFifo::broadcast(const std::vector<Packet>& packets) {
   }
 }
 
+// bebDeliver
 void ProcessFifo::deliver_callback(const Packet& pkt) {
   std::cerr << "Process " << _pid << " received packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
   {
@@ -118,30 +127,16 @@ void ProcessFifo::deliver_callback(const Packet& pkt) {
     _ack_proc_map[pkt].insert(pkt.pid());
   }
 
-  if (can_deliver(pkt)) {
-    do_deliver(pkt);
+  {
+    std::lock_guard<std::mutex> lock(_pending_mutex);
+    pending_t pending_pkt = {pkt, pkt.pid()};
+    if (_pending.find(pending_pkt) == _pending.end()) {
+      _pending.insert(pending_pkt);
+      std::vector<Packet> packets;
+      packets.push_back(pkt);
+      broadcast(packets);
+    }
   }
-
-//  {
-//    std::lock_guard<std::mutex> lock(_pending_mutex);
-////    pending_t pending_pkt = {pkt, pkt.pid()};
-////    if (_pending.find(pending_pkt) == _pending.end()) {
-////      _pending.insert(pending_pkt);
-////      std::vector<Packet> packets;
-////      packets.push_back(pkt);
-////      broadcast(packets);
-////    }
-//
-//    for (auto it = _pending.begin(); it != _pending.end();) {
-//      if (can_deliver(it->pkt)) {
-//        do_deliver(it->pkt);
-//        it = _pending.erase(it);
-//      } else {
-//        std::cerr << "Process " << _pid << " cannot deliver packet " << it->pkt.seq_id() << std::endl;
-//        ++it;
-//      }
-//    }
-//  }
 }
 
 bool ProcessFifo::can_deliver(const Packet& pkt) {
@@ -167,4 +162,22 @@ void ProcessFifo::do_deliver(const Packet& pkt) {
     }
   }
 //  _outfile.flush();
+}
+
+void ProcessFifo::monitor_deliver() {
+  while (!_stop.load()) {
+    std::vector<Packet> pending_packets;
+    {
+      std::lock_guard<std::mutex> lock(_pending_mutex);
+      for (const auto &pending: _pending) {
+        pending_packets.push_back(pending.pkt);
+      }
+    }
+
+    for (const auto &pkt: pending_packets) {
+      if (can_deliver(pkt)) {
+        do_deliver(pkt);
+      }
+    }
+  }
 }

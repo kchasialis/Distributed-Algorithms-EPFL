@@ -44,36 +44,7 @@ void PerfectLink::deliver_packet(const Packet& pkt) {
 }
 
 void PerfectLink::send(const std::vector<Packet> &packets, uint64_t peer) {
-//  _sl->send(p, addr);
   _sl_map[peer]->send(packets);
-}
-
-void PerfectLink::send_syn_packets() {
-  const int interval_ms = 50;
-  std::unordered_map<uint64_t, bool> syn_acked;
-  for (const auto& sl : _sl_map) {
-    syn_acked[sl.first] = false;
-  }
-  while (true) {
-    for (const auto& sl : _sl_map) {
-      if (!syn_acked[sl.first]) {
-        if (!sl.second->send_syn_packet()) {
-          syn_acked[sl.first] = true;
-        }
-      }
-    }
-    bool all_acked = true;
-    for (const auto& acked : syn_acked) {
-      if (!acked.second) {
-        all_acked = false;
-        break;
-      }
-    }
-    if (all_acked || _stop.load()) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-  }
 }
 
 void PerfectLink::stop() {

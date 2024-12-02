@@ -33,7 +33,6 @@ public:
   void stop();
 private:
   UDPSocket _socket;
-  bool _sender;
   std::set<Packet, PacketLess> _unacked_packets;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
@@ -43,14 +42,9 @@ private:
   WriteEventHandler *_write_event_handler;
   EventData _write_event_data{};
 
-  std::condition_variable _syn_received_cv;
-  std::mutex _syn_mutex;
-  std::atomic<bool> _syn_received{false};
   std::mutex _unacked_mutex;
   std::thread _resend_thread;
-  std::thread _syn_resend_thread;
   std::atomic<bool> _stop;
-  std::atomic<bool> _syn_ack_received{false};
   std::default_random_engine _random_engine{std::random_device{}()};
 
   void send_unacked_packets();

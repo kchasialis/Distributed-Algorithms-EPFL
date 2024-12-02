@@ -35,30 +35,11 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
 
 void StubbornLink::process_packet(const Packet& pkt) {
   switch (pkt.packet_type()) {
-    case PacketType::SYN:
-    {
-      assert(_sender);
-      // Notify that SYN has been received
-      {
-        std::lock_guard<std::mutex> lock(_syn_mutex);
-        _syn_received.store(true);
-      }
-      _syn_received_cv.notify_all();
-      // Send a SYN_ACK.
-      assert(pkt.seq_id() == 0);
-      Packet ack_pkt(_pid, PacketType::ACK, pkt.seq_id());
-      _socket.send_buf(ack_pkt.serialize());
-      break;
-    }
     case PacketType::ACK:
     {
-      if (pkt.seq_id() == 0) {
-        _syn_ack_received.store(true);
-      } else {
-        std::lock_guard<std::mutex> lock(_unacked_mutex);
-        _unacked_packets.erase(pkt);
-      }
-      std::cerr << "ACK received for packet with seq_id: " << pkt.seq_id() << std::endl;
+      std::cerr << "ACK packet received with seq_id: " << pkt.seq_id() << " from process " << pkt.pid()  << std::endl;
+      std::lock_guard<std::mutex> lock(_unacked_mutex);
+      _unacked_packets.erase(pkt);
       break;
     }
     case PacketType::DATA:
@@ -127,12 +108,6 @@ void StubbornLink::send_unacked_packets() {
   int timeout_interval_ms = initial_interval_ms;
   const uint32_t sliding_window_size = 300;  // Sliding window size
 
-//  // Wait for the receiver to start (SYN received).
-//  {
-//    std::unique_lock<std::mutex> syn_lock(_syn_mutex);
-//    _syn_received_cv.wait(syn_lock, [this] { return _syn_received.load(); });
-//  }
-
   // Main retransmission loop
   while (!_stop.load()) {
     std::vector<Packet> packets_to_send;
@@ -141,7 +116,6 @@ void StubbornLink::send_unacked_packets() {
       // Lock and populate packets_to_send with the sliding window size
       std::unique_lock<std::mutex> lock(_unacked_mutex);
       if (_unacked_packets.empty()) {
-//        _stop.store(true);
         return;  // Exit if there are no unacknowledged packets
       }
 
@@ -177,43 +151,14 @@ void StubbornLink::send_unacked_packets() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
   }
-
-//  std::cerr << "Exiting send_unacked_packets..." << std::endl;
 }
 
 void StubbornLink::send(const std::vector<Packet> &packets) {
   store_packets(packets);
-//  send_unacked_packets();
-}
-
-//void StubbornLink::send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex) {
-//  // NOTE(kostas): See when to output.
-//  {
-//    std::lock_guard<std::mutex> lock(_unacked_mutex);
-//    unacked_packets.insert(pkt);
-//  }
-//
-//  send_unacked_packets();
-//}
-
-bool StubbornLink::send_syn_packet() {
-  if (_syn_ack_received.load()) {
-    return false;
-  }
-  Packet syn_pkt(_pid, PacketType::SYN, 0);
-  _socket.send_buf(syn_pkt.serialize());
-
-  return true;
 }
 
 void StubbornLink::stop() {
   _stop.store(true);
-  // Notify that SYN has been received to unblock sender.
-  {
-    std::lock_guard<std::mutex> lock(_syn_mutex);
-    _syn_received.store(true);
-  }
-  _syn_received_cv.notify_all();
 }
 
 int StubbornLink::backoff_interval(int timeout) {

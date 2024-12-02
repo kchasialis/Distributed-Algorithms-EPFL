@@ -8,7 +8,6 @@
 enum class PacketType {
     DATA,
     ACK,
-    SYN,
 };
 
 constexpr static size_t HEADER_SIZE = sizeof(uint64_t) + sizeof(PacketType) + sizeof(uint32_t) + sizeof(uint32_t);
