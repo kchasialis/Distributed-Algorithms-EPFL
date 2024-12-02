@@ -53,7 +53,7 @@ void Urb::beb_broadcast(const std::vector<Packet>& packets) {
 }
 
 void Urb::beb_deliver(const Packet& pkt) {
-  std::cerr << "Process " << _pid << " received packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
+//  std::cerr << "Process " << _pid << " received packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
   {
     std::lock_guard<std::mutex> lock(_ack_proc_map_mutex);
     auto it = _ack_proc_map.find(pkt);
@@ -61,7 +61,7 @@ void Urb::beb_deliver(const Packet& pkt) {
       _ack_proc_map[pkt] = std::unordered_set<uint64_t>();
     }
     _ack_proc_map[pkt].insert(pkt.pid());
-    std::cerr << "Process " << _pid << " received " << _ack_proc_map[pkt].size() << " acks for packet " << pkt.seq_id() << std::endl;
+//    std::cerr << "Process " << _pid << " received " << _ack_proc_map[pkt].size() << " acks for packet " << pkt.seq_id() << std::endl;
   }
 
   std::vector<Packet> packets;
@@ -74,9 +74,9 @@ void Urb::beb_deliver(const Packet& pkt) {
       packets.push_back(pkt);
     }
   }
-  if (!packets.empty()) {
-    beb_broadcast(packets);
-  }
+//  if (!packets.empty()) {
+//    beb_broadcast(packets);
+//  }
 }
 
 bool Urb::can_deliver(const Packet& pkt) {

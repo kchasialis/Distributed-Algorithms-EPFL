@@ -92,7 +92,7 @@ void ProcessFifo::run(const FifoConfig& cfg) {
 }
 
 void ProcessFifo::fifo_deliver(const Packet& pkt) {
-//  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << std::endl;
+  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
   std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;

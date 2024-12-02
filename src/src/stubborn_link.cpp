@@ -116,7 +116,7 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
 
 // Sliding window approach.
 void StubbornLink::send_unacked_packets() {
-  const int initial_interval_ms = 100;
+  const int initial_interval_ms = 500;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
   const uint32_t sliding_window_size = 300;  // Sliding window size
