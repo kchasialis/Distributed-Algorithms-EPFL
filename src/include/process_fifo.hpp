@@ -9,7 +9,7 @@
 #include "event_loop.hpp"
 #include "thread_pool.hpp"
 
-constexpr uint32_t event_loop_workers = 10;
+constexpr uint32_t event_loop_workers = 7;
 
 struct pending_t {
     Packet pkt;
@@ -62,6 +62,8 @@ private:
     std::mutex _ack_proc_map_mutex;
     std::unordered_set<pending_t, PendingHash, PendingEqual> _pending;
     std::mutex _pending_mutex;
+    std::unordered_set<delivered_t, DeliveredHash, DeliveredEqual> _delivered;
+    std::mutex _delivered_mutex;
 
     void broadcast(const std::vector<Packet>& packets);
     void deliver_callback(const Packet& pkt);

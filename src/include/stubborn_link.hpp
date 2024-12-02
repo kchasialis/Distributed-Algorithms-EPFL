@@ -8,6 +8,7 @@
 #include <queue>
 #include <atomic>
 #include <set>
+#include <unordered_set>
 #include <condition_variable>
 #include <random>
 #include "udp_socket.hpp"
@@ -33,10 +34,13 @@ public:
   void stop();
 private:
   UDPSocket _socket;
-  std::set<Packet, PacketLess> _unacked_packets;
+//  std::set<Packet, PacketLess> _unacked_packets;
+  std::unordered_set<Packet, PacketHash, PacketEqual> _unacked_packets;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
   uint64_t _pid;
+  struct sockaddr_in _peer_addr;
+  uint16_t _pport;
   ReadEventHandler *_read_event_handler;
   EventData _read_event_data{};
   WriteEventHandler *_write_event_handler;

@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "udp_socket.hpp"
+#include <iostream>
 
 UDPSocket::UDPSocket(in_addr_t addr, uint16_t port) {
   // Create a non-blocking UDP socket.
@@ -85,10 +86,18 @@ void UDPSocket::conn(const struct sockaddr_in& addr) {
     perror("connect failed");
     exit(EXIT_FAILURE);
   }
+//  if (connect(_infd, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+//    perror("connect failed");
+//    exit(EXIT_FAILURE);
+//  }
 }
 
 ssize_t UDPSocket::send_buf(const std::vector<uint8_t>& buffer) const {
   return send(_outfd, buffer.data(), buffer.size(), 0);
+}
+
+ssize_t UDPSocket::sendto_buf(const std::vector<uint8_t> &buffer, const struct sockaddr_in& addr) const {
+  return sendto(_outfd, buffer.data(), buffer.size(), 0, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr));
 }
 
 ssize_t UDPSocket::recv_buf(std::vector<uint8_t>& buffer) const {

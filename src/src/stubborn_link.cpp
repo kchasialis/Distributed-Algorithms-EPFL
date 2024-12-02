@@ -18,6 +18,9 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   peer_addr.sin_addr.s_addr = paddr;
   _socket.conn(peer_addr);
 
+  _pport = pport;
+  _peer_addr = peer_addr;
+
   _read_event_handler = new ReadEventHandler(&_socket,
                                              [this](const Packet& pkt) { this->process_packet(pkt); });
   _read_event_data.events = EPOLLIN;
@@ -37,24 +40,33 @@ void StubbornLink::process_packet(const Packet& pkt) {
   switch (pkt.packet_type()) {
     case PacketType::ACK:
     {
-      std::cerr << "ACK packet received with seq_id: " << pkt.seq_id() << " from process " << pkt.pid()  << std::endl;
-      std::lock_guard<std::mutex> lock(_unacked_mutex);
-      _unacked_packets.erase(pkt);
+//      std::cerr << "ACK packet received with seq_id: " << pkt.seq_id() << " from process " << pkt.pid()  << std::endl;
+      {
+        std::lock_guard<std::mutex> lock(_unacked_mutex);
+//        bool print_msg = false;
+//        if (_unacked_packets.size() == 1) {
+//          print_msg = true;
+//        }
+        _unacked_packets.erase(pkt);
+//        if (_unacked_packets.empty() && print_msg) {
+//          std::cerr << "NO MORE UNACKED PACKETS FROM: " << ntohs(_pport) << std::endl;
+//        }
+      }
       break;
     }
     case PacketType::DATA:
     {
-      std::cerr << "Data packet received with seq_id: " << pkt.seq_id() << std::endl;
+//      std::cerr << "Data packet received with seq_id: " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
       // It is a data packet.
 
-      // Deliver the data packet.
+      // Send an ACK.
+//      std::cerr << "Sending ACK for packet with seq_id: " << pkt.seq_id() << " to " << _pport << std::endl;
       _deliver_cb(pkt);
 
-      std::cerr << "Sending ACK for packet with seq_id: " << pkt.seq_id() << std::endl;
-
-      // Send an ACK.
-      Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
+      Packet ack_pkt(_pid, PacketType::ACK, pkt.seq_id());
+//      _socket.sendto_buf(ack_pkt.serialize(), _peer_addr);
       _socket.send_buf(ack_pkt.serialize());
+
       break;
     }
     default:
@@ -69,6 +81,7 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
     for (const auto &pkt: packets) {
       _unacked_packets.insert(pkt);
     }
+//    std::cerr << "Process: " << _pid << " unacked packets for: " << ntohs(_pport) << " size: " << _unacked_packets.size() << std::endl;
   }
 }
 
@@ -103,7 +116,7 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
 
 // Sliding window approach.
 void StubbornLink::send_unacked_packets() {
-  const int initial_interval_ms = 50;
+  const int initial_interval_ms = 100;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
   const uint32_t sliding_window_size = 300;  // Sliding window size
@@ -125,31 +138,41 @@ void StubbornLink::send_unacked_packets() {
       }
     }
 
+//    std::cerr << "Resending " << packets_to_send.size() << " to " << _pport << std::endl;
+
     // Send packets in the current sliding window
+    size_t sent = 0;
     for (const auto& pkt : packets_to_send) {
 
       auto pkt_serialized = pkt.serialize();
-
       ssize_t nsent = _socket.send_buf(pkt_serialized);
+//      ssize_t nsent = _socket.sendto_buf(pkt_serialized, _peer_addr);
       if (nsent == -1) {
         if (errno == EWOULDBLOCK) {
-          // Socket buffer full.
-          timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms),
-                                         max_interval_ms);
-        }
-        else if (errno == ECONNREFUSED) {
-          // Receiver is not up and running.
+          std::cerr << "OUTPUT BUFFER BLOCKED" << std::endl;
+          // Socket buffer full, increase timeout and wait.
+          break;
+        } else if (errno == ECONNREFUSED) {
+          // Receiver is not up and running, try later.
           return;
         } else {
           perror("send failed");
           exit(EXIT_FAILURE);
         }
       } else {
-        timeout_interval_ms = initial_interval_ms;
+        sent++;
       }
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
+    if (sent == packets_to_send.size()) {
+      timeout_interval_ms = initial_interval_ms;
+    } else {
+      timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms),
+                                     max_interval_ms);
+    }
+
+//    std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
 }
 

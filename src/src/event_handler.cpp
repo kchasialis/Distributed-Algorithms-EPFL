@@ -8,7 +8,6 @@ ReadEventHandler::ReadEventHandler(UDPSocket *socket, ReadCallback process_pkt_c
 
 void ReadEventHandler::handle_read_event(uint32_t events) {
   if (events & EPOLLIN) {
-    std::cerr << "Handling read event" << std::endl;
     // Data is available to read.
     std::vector<uint8_t> buffer(RECV_BUF_SIZE, 0);
     while (true) {

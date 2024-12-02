@@ -105,13 +105,12 @@ void EventLoop::run() {
         // Data is available to read.
         auto *handler = static_cast<ReadEventHandler *>(event_data->handler_obj);
         handler->handle_read_event(events[i].events);
-        rearm(event_data);
       } else if (events[i].events & EPOLLOUT) {
         // Data is available to write.
         auto *handler = static_cast<WriteEventHandler *>(event_data->handler_obj);
         handler->handle_write_event(events[i].events);
-        rearm(event_data);
       }
+      rearm(event_data);
     }
   }
 }

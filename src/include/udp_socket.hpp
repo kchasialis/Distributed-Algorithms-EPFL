@@ -23,4 +23,5 @@ public:
     void conn(const struct sockaddr_in& addr);
     ssize_t send_buf(const std::vector<uint8_t>& buffer) const;
     ssize_t recv_buf(std::vector<uint8_t>& buffer) const;
+    ssize_t sendto_buf(const std::vector<uint8_t> &buffer, const struct sockaddr_in& addr) const;
 };

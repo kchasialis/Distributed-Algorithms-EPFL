@@ -24,6 +24,17 @@ const std::vector<uint8_t>& Packet::data() const {
   return _data;
 }
 
+std::string Packet::type() const {
+  switch (_type) {
+    case PacketType::ACK:
+      return "ACK";
+    case PacketType::DATA:
+      return "DATA";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 std::vector<uint8_t> Packet::serialize() const {
   std::vector<uint8_t> buffer;
 
@@ -43,6 +54,7 @@ std::vector<uint8_t> Packet::serialize() const {
 
   return buffer;
 }
+
 
 void Packet::deserialize(const std::vector<uint8_t> &buffer) {
   assert(buffer.size() >= HEADER_SIZE);
