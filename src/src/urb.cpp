@@ -24,7 +24,7 @@ void Urb::broadcast(const std::vector<Packet>& packets) {
   {
     std::lock_guard<std::mutex> lock(_pending_mutex);
     for (const auto& pkt : packets) {
-      _pending.insert({pkt, _pid});
+      _pending.insert(pkt);
     }
   }
 
@@ -67,16 +67,16 @@ void Urb::beb_deliver(const Packet& pkt) {
   std::vector<Packet> packets;
   {
     std::lock_guard<std::mutex> lock(_pending_mutex);
-    pending_t pending_pkt = {pkt, pkt.pid()};
-    if (_pending.find(pending_pkt) == _pending.end()) {
-      _pending.insert(pending_pkt);
+//    pending_t pending_pkt = {pkt, pkt.pid()};
+    if (_pending.find(pkt) == _pending.end()) {
+      _pending.insert(pkt);
 //      std::cerr << "Process " << _pid << " added packet " << pkt.seq_id() << " to pending set" << std::endl;
       packets.push_back(pkt);
     }
   }
-//  if (!packets.empty()) {
-//    beb_broadcast(packets);
-//  }
+  if (!packets.empty()) {
+    beb_broadcast(packets);
+  }
 }
 
 bool Urb::can_deliver(const Packet& pkt) {
@@ -108,7 +108,7 @@ void Urb::monitor_delivery() {
     {
       std::lock_guard<std::mutex> lock(_pending_mutex);
       for (const auto &pending: _pending) {
-        pending_packets.push_back(pending.pkt);
+        pending_packets.push_back(pending);
       }
     }
 

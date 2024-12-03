@@ -30,12 +30,31 @@ public:
 //  void send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex);
 //  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   void send(const std::vector<Packet> &packets);
-  bool send_syn_packet();
+//  bool send_syn_packet();
   void stop();
 private:
+  // We might relay messages from other processes, we want to check for the pair seq_id, pid
+  struct UnAckedPacketEqual {
+      bool operator()(const Packet& lhs, const Packet& rhs) const {
+        return lhs.seq_id() == rhs.seq_id() && lhs.pid() == rhs.pid();
+      }
+  };
+
+  struct UnAckedPacketHash {
+      std::size_t operator()(const Packet& pkt) const {
+        std::hash<uint32_t> hash_seq_id;
+        std::hash<uint64_t> hash_pid;
+
+        std::size_t seed = hash_seq_id(pkt.seq_id());
+        seed ^= hash_pid(pkt.pid()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        return seed;
+      }
+  };
+
   UDPSocket _socket;
+//  std::multiset<Packet, PacketLess> _unacked_packets;
 //  std::set<Packet, PacketLess> _unacked_packets;
-  std::unordered_set<Packet, PacketHash, PacketEqual> _unacked_packets;
+  std::unordered_set<Packet, UnAckedPacketHash, UnAckedPacketEqual> _unacked_packets;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;
   uint64_t _pid;
@@ -50,6 +69,12 @@ private:
   std::thread _resend_thread;
   std::atomic<bool> _stop;
   std::default_random_engine _random_engine{std::random_device{}()};
+
+  std::atomic<int> _max_budget;             // Maximum number of packets
+  std::atomic<int> _current_budget;         // Remaining budget
+  std::atomic<int> _budget_replenish_amount; // Amount to replenish
+  int _budget_replenish_interval_ms;        // Replenish interval in ms
+  std::chrono::steady_clock::time_point _last_replenish_time;
 
   void send_unacked_packets();
   void process_packet(const Packet &pkt);
