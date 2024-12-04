@@ -10,29 +10,7 @@
 #include "thread_pool.hpp"
 #include "urb.hpp"
 
-constexpr uint32_t event_loop_workers = 7;
-
-struct pending_t {
-    Packet pkt;
-    uint64_t peer;
-};
-
-struct PendingEqual {
-    bool operator()(const pending_t& lhs, const pending_t& rhs) const {
-        return lhs.pkt == rhs.pkt && lhs.peer == rhs.peer;
-    }
-};
-
-struct PendingHash {
-    std::size_t operator()(const pending_t& p) const {
-      PacketHash hash_pkt;
-      std::hash<uint64_t> hash_pid;
-
-      std::size_t seed = hash_pkt(p.pkt);
-      seed ^= hash_pid(p.peer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-      return seed;
-    }
-};
+constexpr uint32_t event_loop_workers = 16;
 
 class ProcessFifo {
 public:

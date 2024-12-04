@@ -76,7 +76,7 @@ static int run_process(Parser &parser, const FifoConfig& cfg) {
     return 1;
   }
 
-  std::cerr << "I am process with id: " << parser.id() << std::endl;
+//  std::cerr << "I am process with id: " << parser.id() << std::endl;
 
   ProcessFifo process(parser.id(), current_host.ip, current_host.port,
                       parser.hosts(), cfg, parser.outputPath());
