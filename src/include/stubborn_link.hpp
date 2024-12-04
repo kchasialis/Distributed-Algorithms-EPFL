@@ -72,7 +72,7 @@ private:
 
   std::atomic<int> _max_budget;             // Maximum number of packets
   std::atomic<int> _current_budget;         // Remaining budget
-  std::atomic<int> _budget_replenish_amount; // Amount to replenish
+  int _budget_replenish_amount;             // Amount to replenish
   int _budget_replenish_interval_ms;        // Replenish interval in ms
   std::chrono::steady_clock::time_point _last_replenish_time;
 
@@ -81,4 +81,5 @@ private:
 //  void store_and_output_messages(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   void store_packets(const std::vector<Packet> &packets);
   int backoff_interval(int timeout);
+  void adjust_budget(int amount);
 };

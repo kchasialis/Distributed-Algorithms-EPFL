@@ -11,7 +11,7 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            EventLoop& event_loop, DeliverCallback deliver_cb) :
                            _socket(addr, port), _deliver_cb(std::move(deliver_cb)),
                            _pid(pid), _stop(false), _max_budget(128), _current_budget(128),
-                           _budget_replenish_amount(32), _budget_replenish_interval_ms(200),
+                           _budget_replenish_amount(32), _budget_replenish_interval_ms(150),
                            _last_replenish_time(std::chrono::steady_clock::now()) {
 
   struct sockaddr_in peer_addr{};
@@ -59,15 +59,7 @@ void StubbornLink::process_packet(const Packet& pkt) {
       if (found) {
 //        std::cerr << "ACK received for packet with seq_id: " << pkt.seq_id() << " from " << ntohs(_pport) << " " << pkt.pid() << std::endl;
         // ACK received. We need to replenish the budget.
-        int current = _current_budget.load(std::memory_order_relaxed);
-        int max_budget = _max_budget.load(std::memory_order_relaxed);
-
-        // Use compare-exchange to safely update the budget
-        while (current < max_budget &&
-               !_current_budget.compare_exchange_weak(current, current + 1,
-                                                      std::memory_order_relaxed)) {}
-
-//        std::cerr << "Incrementing budget for " << ntohs(_pport) << " to " << _current_budget.load() << std::endl;
+        adjust_budget(1);
       }
       break;
     }
@@ -102,35 +94,6 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
   }
 }
 
-//  // Send 8 messages at a single packet.
-//  std::vector<std::string> output_buffers;
-//  {
-//    std::lock_guard<std::mutex> lock(_unacked_mutex);
-//    uint32_t current_seq_id = 1;
-//    for (uint32_t i = 0; i < n_messages; i += 8) {
-//      uint32_t packet_size = std::min(8U, n_messages - i);
-//      std::vector<uint8_t> data(packet_size * sizeof(uint32_t));
-//      for (uint32_t j = 0; j < packet_size; j++) {
-//        std::memcpy(data.data() + j * sizeof(uint32_t), &current_seq_id,
-//                    sizeof(uint32_t));
-//        output_buffers.push_back("b " + std::to_string(current_seq_id) + "\n");
-//        current_seq_id++;
-//      }
-//
-//      Packet p(_pid, PacketType::DATA, (i / 8) + 1, data);
-//      unacked_packets.insert(p);
-//    }
-//  }
-//
-//  {
-//    std::lock_guard<std::mutex> lock(outfile_mutex);
-//    for (const auto& buffer : output_buffers) {
-//      outfile << buffer;
-//    }
-//    outfile.flush();
-//  }
-//}
-
 void StubbornLink::send_unacked_packets() {
   const int initial_interval_ms = 50;
   const int max_interval_ms = 1000;
@@ -153,7 +116,7 @@ void StubbornLink::send_unacked_packets() {
     }
 
     // Send packets within the current budget
-    int sent = 0;
+    size_t sent = 0;
     for (const auto& pkt : packets_to_send) {
       auto pkt_serialized = pkt.serialize();
       ssize_t nsent = _socket.send_buf(pkt_serialized);
@@ -162,7 +125,7 @@ void StubbornLink::send_unacked_packets() {
           std::cerr << "OUTPUT BUFFER BLOCKED" << std::endl;
           break;
         } else if (errno == ECONNREFUSED) {
-          break;
+          return;
         } else {
           perror("send failed");
           exit(EXIT_FAILURE);
@@ -172,19 +135,18 @@ void StubbornLink::send_unacked_packets() {
       }
     }
 
-    // Decrement the budget by the number of packets successfully sent
-    _current_budget.fetch_sub(sent, std::memory_order_relaxed);
-//    std::cerr << "Decrementing budget for " << ntohs(_pport) << " to " << _current_budget.load() << std::endl;
+    // Safely decrement the budget by the number of packets sent
+    adjust_budget(-static_cast<int>(packets_to_send.size()));
 
-    // Periodic replenishment of budget
+    // Periodic replenishment of budget.
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - _last_replenish_time).count() >= _budget_replenish_interval_ms) {
-      _current_budget.store(std::min(_current_budget.load() + _budget_replenish_amount.load(), _max_budget.load()), std::memory_order_relaxed);
+      adjust_budget(_budget_replenish_amount);
       _last_replenish_time = now;
     }
 
     // Adjust timeout based on how many packets were sent
-    if (static_cast<size_t>(sent) == packets_to_send.size()) {
+    if (sent == packets_to_send.size()) {
       timeout_interval_ms = initial_interval_ms;
     } else {
       timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms), max_interval_ms);
@@ -193,68 +155,6 @@ void StubbornLink::send_unacked_packets() {
     std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
   }
 }
-
-//// Sliding window approach.
-//void StubbornLink::send_unacked_packets() {
-//  const int initial_interval_ms = 150;
-//  const int max_interval_ms = 1000;
-//  int timeout_interval_ms = initial_interval_ms;
-//  const uint32_t sliding_window_size = 32;  // Sliding window size
-//
-//  // Main retransmission loop
-//  while (!_stop.load()) {
-//    std::vector<Packet> packets_to_send;
-//
-//    {
-//      // Lock and populate packets_to_send with the sliding window size
-//      std::unique_lock<std::mutex> lock(_unacked_mutex);
-//      if (_unacked_packets.empty()) {
-//        return;  // Exit if there are no unacknowledged packets
-//      }
-//
-//      auto it = _unacked_packets.begin();
-//      for (size_t i = 0; i < sliding_window_size && it != _unacked_packets.end(); ++i, ++it) {
-//        packets_to_send.push_back(*it);
-//      }
-//    }
-//
-////    std::cerr << "Resending " << packets_to_send.size() << " to " << _pport << std::endl;
-//
-//    // Send packets in the current sliding window
-//    size_t sent = 0;
-//    for (const auto& pkt : packets_to_send) {
-//
-//      auto pkt_serialized = pkt.serialize();
-//      ssize_t nsent = _socket.send_buf(pkt_serialized);
-////      ssize_t nsent = _socket.sendto_buf(pkt_serialized, _peer_addr);
-//      if (nsent == -1) {
-//        if (errno == EWOULDBLOCK) {
-//          std::cerr << "OUTPUT BUFFER BLOCKED" << std::endl;
-//          // Socket buffer full, increase timeout and wait.
-//          break;
-//        } else if (errno == ECONNREFUSED) {
-//          // Receiver is not up and running, try later.
-//          return;
-//        } else {
-//          perror("send failed");
-//          exit(EXIT_FAILURE);
-//        }
-//      } else {
-//        sent++;
-//      }
-//    }
-//
-//    if (sent == packets_to_send.size()) {
-//      timeout_interval_ms = initial_interval_ms;
-//    } else {
-//      timeout_interval_ms = std::min(backoff_interval(timeout_interval_ms),
-//                                     max_interval_ms);
-//    }
-//
-////    std::this_thread::sleep_for(std::chrono::milliseconds(timeout_interval_ms));
-//    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//  }
-//}
 
 void StubbornLink::send(const std::vector<Packet> &packets) {
   store_packets(packets);
@@ -267,4 +167,22 @@ void StubbornLink::stop() {
 int StubbornLink::backoff_interval(int timeout) {
   std::uniform_int_distribution<int> distribution(timeout, 2 * timeout);
   return distribution(_random_engine);
+}
+
+void StubbornLink::adjust_budget(int delta) {
+  int current = _current_budget.load(std::memory_order_relaxed);
+  int max_budget = _max_budget.load(std::memory_order_relaxed);
+
+  while (true) {
+    int new_budget = current + delta;
+    if (new_budget < 0) {
+      new_budget = 0;
+    } else if (new_budget > max_budget) {
+      new_budget = max_budget;
+    }
+
+    if (_current_budget.compare_exchange_weak(current, new_budget, std::memory_order_relaxed)) {
+      break;
+    }
+  }
 }
