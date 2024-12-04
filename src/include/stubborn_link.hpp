@@ -52,8 +52,6 @@ private:
   };
 
   UDPSocket _socket;
-//  std::multiset<Packet, PacketLess> _unacked_packets;
-//  std::set<Packet, PacketLess> _unacked_packets;
   std::unordered_set<Packet, UnAckedPacketHash, UnAckedPacketEqual> _unacked_packets;
   std::condition_variable _resend_cv;
   DeliverCallback _deliver_cb;

@@ -10,8 +10,8 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            in_addr_t paddr, uint16_t pport,
                            EventLoop& event_loop, DeliverCallback deliver_cb) :
                            _socket(addr, port), _deliver_cb(std::move(deliver_cb)),
-                           _pid(pid), _stop(false), _max_budget(128), _current_budget(128),
-                           _budget_replenish_amount(32), _budget_replenish_interval_ms(150),
+                           _pid(pid), _stop(false), _max_budget(64), _current_budget(64),
+                           _budget_replenish_amount(64), _budget_replenish_interval_ms(250),
                            _last_replenish_time(std::chrono::steady_clock::now()) {
 
   struct sockaddr_in peer_addr{};
@@ -95,7 +95,7 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
 }
 
 void StubbornLink::send_unacked_packets() {
-  const int initial_interval_ms = 50;
+  const int initial_interval_ms = 150;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
 

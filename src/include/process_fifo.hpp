@@ -52,6 +52,9 @@ private:
     EventLoop _event_loop;
     ThreadPool *_thread_pool;
     Urb *_urb;
+    std::mutex _pending_next_mutex;
+    std::unordered_map<uint64_t, std::set<Packet, PacketLess>> _pending; // pid -> packets
+    std::unordered_map<uint64_t, uint32_t> _next; // pid -> seq_id
     std::mutex _outfile_mutex;
     std::ofstream _outfile;
     size_t _n_delivered_messages;
@@ -59,5 +62,6 @@ private:
     std::mutex _stop_mutex;
     std::condition_variable _stop_cv;
 
+    void urb_deliver(const Packet& pkt);
     void fifo_deliver(const Packet& pkt);
 };

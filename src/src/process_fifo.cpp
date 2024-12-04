@@ -14,13 +14,17 @@ ProcessFifo::ProcessFifo(uint64_t pid, in_addr_t addr, uint16_t port,
         : _pid(pid), _addr(addr), _port(port), _outfile(outfname, std::ios::out | std::ios::trunc),
           _n_delivered_messages(cfg.num_messages() * (hosts.size())) {
 
-  std::cerr << "Expecting " << _n_delivered_messages << " messages" << std::endl;
+//  std::cerr << "Expecting " << _n_delivered_messages << " messages" << std::endl;
+
+  for (const auto& host : hosts) {
+    _next[host.id] = 1;
+  }
 
   _thread_pool = new ThreadPool(8);
 
   _urb = new Urb(pid, addr, port, hosts, _event_loop, _thread_pool,
                  [this](const Packet& pkt) {
-                   this->fifo_deliver(pkt);
+                   this->urb_deliver(pkt);
                  });
 
   for (uint32_t i = 0; i < event_loop_workers; i++) {
@@ -45,7 +49,7 @@ uint64_t ProcessFifo::pid() const {
 void ProcessFifo::stop() {
   {
     std::lock_guard<std::mutex> lock(_outfile_mutex);
-    std::cerr << "Flushing output file" << std::endl;
+//    std::cerr << "Flushing output file" << std::endl;
     _outfile.flush();
   }
   _stop.store(true);
@@ -91,8 +95,32 @@ void ProcessFifo::run(const FifoConfig& cfg) {
 //  }
 }
 
+void ProcessFifo::urb_deliver(const Packet &pkt) {
+//  fifo_deliver(pkt);
+  std::vector<Packet> to_deliver;
+  {
+    std::lock_guard<std::mutex> lock(_pending_next_mutex);
+    _pending[pkt.pid()].insert(pkt);
+
+    auto &packets = _pending[pkt.pid()];
+    for (auto it = packets.begin(); it != packets.end();) {
+      if (it->seq_id() == _next[pkt.pid()]) {
+        to_deliver.push_back(*it);
+        it = packets.erase(it);
+        _next[pkt.pid()]++;
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  for (const auto &d_pkt: to_deliver) {
+    fifo_deliver(d_pkt);
+  }
+}
+
 void ProcessFifo::fifo_deliver(const Packet& pkt) {
-  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
+//  std::cerr << "Process " << _pid << " delivered packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
   std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;
