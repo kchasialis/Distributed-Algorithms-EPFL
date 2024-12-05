@@ -11,7 +11,8 @@
 class Urb {
 public:
     Urb(uint64_t pid, in_addr_t addr, uint16_t port,
-        const std::vector<Parser::Host>& hosts, EventLoop& event_loop,
+        const std::vector<Parser::Host>& hosts,
+        EventLoop &read_event_loop, EventLoop &write_event_loop,
         ThreadPool *_thread_pool, DeliverCallback deliver_cb);
     ~Urb();
 

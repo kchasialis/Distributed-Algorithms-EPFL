@@ -2,11 +2,12 @@
 
 Urb::Urb(uint64_t pid, in_addr_t addr, uint16_t port,
          const std::vector<Parser::Host>& hosts,
-         EventLoop& event_loop, ThreadPool *thread_pool,
+         EventLoop &read_event_loop, EventLoop &write_event_loop,
+         ThreadPool *thread_pool,
          DeliverCallback deliver_cb)
         : _pid(pid), _addr(addr), _port(port), _hosts(hosts),
           _stop(false), _deliver_cb(std::move(deliver_cb)) {
-  _pl = new PerfectLink(pid, addr, port, hosts, event_loop,
+  _pl = new PerfectLink(pid, addr, port, hosts, read_event_loop, write_event_loop,
                         [this](const Packet& pkt) {
                           this->beb_deliver(pkt);
                         });

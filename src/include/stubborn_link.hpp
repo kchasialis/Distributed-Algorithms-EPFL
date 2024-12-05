@@ -25,7 +25,8 @@ class StubbornLink {
 public:
   StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                in_addr_t paddr, uint16_t pport,
-               EventLoop &event_loop, DeliverCallback _deliver_cb);
+               EventLoop &read_event_loop, EventLoop &write_event_loop,
+               DeliverCallback _deliver_cb);
 
 //  void send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex);
 //  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);

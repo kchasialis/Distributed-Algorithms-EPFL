@@ -39,7 +39,8 @@ public:
 //              const std::vector<Parser::Host>& hosts, uint64_t receiver_proc,
 //              EventLoop& event_loop, DeliverCallback deliver_cb);
   PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port,
-              const std::vector<Parser::Host>& hosts, EventLoop& event_loop,
+              const std::vector<Parser::Host>& hosts,
+              EventLoop &read_event_loop, EventLoop &write_event_loop,
               DeliverCallback deliver_cb);
   ~PerfectLink();
 

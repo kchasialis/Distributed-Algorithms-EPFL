@@ -16,22 +16,35 @@ ProcessFifo::ProcessFifo(uint64_t pid, in_addr_t addr, uint16_t port,
 
 //  std::cerr << "Expecting " << _n_delivered_messages << " messages" << std::endl;
 
+  _start_time = std::chrono::steady_clock::now();
+
   for (const auto& host : hosts) {
     _next[host.id] = 1;
   }
 
   _thread_pool = new ThreadPool(8);
 
-  _urb = new Urb(pid, addr, port, hosts, _event_loop, _thread_pool,
-                 [this](const Packet& pkt) {
+  _urb = new Urb(pid, addr, port, hosts, _read_event_loop, _write_event_loop,
+                 _thread_pool, [this](const Packet& pkt) {
                    this->urb_deliver(pkt);
                  });
 
-  for (uint32_t i = 0; i < event_loop_workers; i++) {
+  for (uint32_t i = 0; i < read_event_loop_workers; i++) {
     _thread_pool->enqueue([this] {
-        this->_event_loop.run();
+        this->_read_event_loop.run();
     });
   }
+  for (uint32_t i = 0; i < write_event_loop_workers; i++) {
+    _thread_pool->enqueue([this] {
+        this->_write_event_loop.run();
+    });
+  }
+
+//  for (uint32_t i = 0; i < event_loop_workers; i++) {
+//    _thread_pool->enqueue([this] {
+//        this->_event_loop.run();
+//    });
+//  }
 }
 
 ProcessFifo::~ProcessFifo() {
@@ -54,13 +67,15 @@ void ProcessFifo::stop() {
   }
   _stop.store(true);
   _urb->stop();
-  _event_loop.stop();
+//  _event_loop.stop();
+  _write_event_loop.stop();
+  _read_event_loop.stop();
   _stop_cv.notify_all();
 }
 
-EventLoop& ProcessFifo::event_loop() {
-  return _event_loop;
-}
+//EventLoop& ProcessFifo::event_loop() {
+//  return _event_loop;
+//}
 
 void ProcessFifo::run(const FifoConfig& cfg) {
   std::vector<Packet> packets;
@@ -86,7 +101,7 @@ void ProcessFifo::run(const FifoConfig& cfg) {
 
   _urb->broadcast(packets);
 
-  _event_loop.run();
+  _read_event_loop.run();
 
   // Wait until stop is called.
 //  {
@@ -132,7 +147,11 @@ void ProcessFifo::fifo_deliver(const Packet& pkt) {
     }
     --_n_delivered_messages;
     if (_n_delivered_messages == 0) {
-      std::cerr << "Process " << _pid << " received all messages!" << std::endl;
+      auto end_time = std::chrono::steady_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - _start_time).count();
+      std::cerr << "Process " << _pid << " received all messages! Execution time: "
+                << duration << " ms" << std::endl;
+//      std::cerr << "Process " << _pid << " received all messages!" << std::endl;
     }
   }
 //  _outfile.flush();

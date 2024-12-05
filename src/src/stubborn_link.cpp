@@ -8,7 +8,8 @@
 
 StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            in_addr_t paddr, uint16_t pport,
-                           EventLoop& event_loop, DeliverCallback deliver_cb) :
+                           EventLoop &read_event_loop, EventLoop &write_event_loop,
+                           DeliverCallback deliver_cb) :
                            _socket(addr, port), _deliver_cb(std::move(deliver_cb)),
                            _pid(pid), _stop(false), _max_budget(32), _current_budget(32),
                            _budget_replenish_amount(16), _budget_replenish_interval_ms(100),
@@ -34,8 +35,8 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   _write_event_data.fd = _socket.outfd();
   _write_event_data.handler_obj = _write_event_handler;
 
-  event_loop.add(&_read_event_data);
-  event_loop.add(&_write_event_data);
+  read_event_loop.add(&_read_event_data);
+  write_event_loop.add(&_write_event_data);
 }
 
 void StubbornLink::process_packet(const Packet& pkt) {

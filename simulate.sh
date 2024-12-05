@@ -23,15 +23,8 @@ pids=()
 # Trap SIGINT (Ctrl+C) to clean up child processes
 trap 'echo "Terminating processes..."; kill ${pids[@]} 2>/dev/null; exit' SIGINT
 
-# Start the first process in the foreground to view its stdout
-echo "Starting process 1 in foreground..."
-./run.sh --id 1 --hosts "$hosts_file" --output "$output_dir/1.output" "$config_file" &
-
-# Store PID of the first process
-pids+=($!)
-
 # Start the remaining processes in the background
-for ((i = 2; i <= num_processes; i++)); do
+for ((i = 1; i <= num_processes; i++)); do
     echo "Starting process $i in background..."
     ./run.sh --id "$i" --hosts "$hosts_file" --output "$output_dir/$i.output" "$config_file" &
     pids+=($!)
