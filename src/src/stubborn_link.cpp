@@ -11,8 +11,7 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                            EventLoop &read_event_loop, EventLoop &write_event_loop,
                            DeliverCallback deliver_cb) :
                            _socket(addr, port), _deliver_cb(std::move(deliver_cb)),
-                           _pid(pid), _stop(false), _max_budget(32), _current_budget(32),
-                           _budget_replenish_amount(16), _budget_replenish_interval_ms(100),
+                           _pid(pid), _stop(false), _current_budget(_max_budget),
                            _last_replenish_time(std::chrono::steady_clock::now()) {
 
   struct sockaddr_in peer_addr{};
@@ -39,26 +38,22 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   write_event_loop.add(&_write_event_data);
 }
 
+StubbornLink::~StubbornLink() {
+  delete _read_event_handler;
+  delete _write_event_handler;
+}
+
 void StubbornLink::process_packet(const Packet& pkt) {
-  switch (pkt.packet_type()) {
+  switch (pkt.type()) {
     case PacketType::ACK:
     {
-//      std::cerr << "ACK packet received with seq_id: " << pkt.seq_id() << " from process " << pkt.pid()  << std::endl;
       bool found;
       {
         std::lock_guard<std::mutex> lock(_unacked_mutex);
-//        bool print_msg = false;
-//        if (_unacked_packets.size() == 1) {
-//          print_msg = true;
-//        }
         found = _unacked_packets.erase(pkt) > 0;
-//        if (_unacked_packets.empty() && print_msg) {
-//          std::cerr << "NO MORE UNACKED PACKETS FROM: " << ntohs(_pport) << std::endl;
-//        }
       }
 
       if (found) {
-//        std::cerr << "ACK received for packet with seq_id: " << pkt.seq_id() << " from " << ntohs(_pport) << " " << pkt.pid() << std::endl;
         // ACK received. We need to replenish the budget.
         adjust_budget(1);
       }
@@ -66,17 +61,13 @@ void StubbornLink::process_packet(const Packet& pkt) {
     }
     case PacketType::DATA:
     {
-//      std::cerr << "Data packet received with seq_id: " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
       // It is a data packet.
 
       // Send an ACK.
-//      std::cerr << "Sending ACK for packet with seq_id: " << pkt.seq_id() << " to " << _pport << std::endl;
-      _deliver_cb(pkt);
-
       Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
-//      _socket.sendto_buf(ack_pkt.serialize(), _peer_addr);
       _socket.send_buf(ack_pkt.serialize());
 
+      _deliver_cb(pkt);
       break;
     }
     default:
@@ -88,20 +79,20 @@ void StubbornLink::process_packet(const Packet& pkt) {
 void StubbornLink::store_packets(const std::vector<Packet> &packets) {
   {
     std::lock_guard<std::mutex> lock(_unacked_mutex);
-    for (const auto &pkt: packets) {
+    for (const auto &pkt : packets) {
       _unacked_packets.insert(pkt);
     }
-//    std::cerr << "Process: " << _pid << " unacked packets for: " << ntohs(_pport) << " size: " << _unacked_packets.size() << std::endl;
   }
 }
 
 void StubbornLink::send_unacked_packets() {
-  const int initial_interval_ms = 250;
+  const int initial_interval_ms = 50;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
 
   while (!_stop.load()) {
     std::vector<Packet> packets_to_send;
+    packets_to_send.reserve(_max_budget);
 
     {
       std::unique_lock<std::mutex> lock(_unacked_mutex);
@@ -111,7 +102,8 @@ void StubbornLink::send_unacked_packets() {
 
       // Populate packets_to_send based on the current budget
       auto it = _unacked_packets.begin();
-      for (int i = 0; i < _current_budget.load() && it != _unacked_packets.end(); ++i, ++it) {
+      int current_budget = _current_budget.load();
+      for (int i = 0; i < current_budget && it != _unacked_packets.end(); ++i, ++it) {
         packets_to_send.push_back(*it);
       }
     }
@@ -123,7 +115,6 @@ void StubbornLink::send_unacked_packets() {
       ssize_t nsent = _socket.send_buf(pkt_serialized);
       if (nsent == -1) {
         if (errno == EWOULDBLOCK) {
-          std::cerr << "OUTPUT BUFFER BLOCKED" << std::endl;
           break;
         } else if (errno == ECONNREFUSED) {
           return;
@@ -141,12 +132,13 @@ void StubbornLink::send_unacked_packets() {
 
     // Periodic replenishment of budget.
     auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - _last_replenish_time).count() >= _budget_replenish_interval_ms) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - _last_replenish_time).count();
+    if (elapsed >= _budget_replenish_interval_ms) {
       adjust_budget(_budget_replenish_amount);
       _last_replenish_time = now;
     }
 
-    // Adjust timeout based on how many packets were sent
+    // Adjust timeout based on how many packets were sent successfully
     if (sent == packets_to_send.size()) {
       timeout_interval_ms = initial_interval_ms;
     } else {
@@ -172,18 +164,26 @@ int StubbornLink::backoff_interval(int timeout) {
 
 void StubbornLink::adjust_budget(int delta) {
   int current = _current_budget.load(std::memory_order_relaxed);
-  int max_budget = _max_budget.load(std::memory_order_relaxed);
+//  int max_budget = _max_budget.load(std::memory_order_relaxed);
 
-  while (true) {
-    int new_budget = current + delta;
-    if (new_budget < 0) {
-      new_budget = 0;
-    } else if (new_budget > max_budget) {
-      new_budget = max_budget;
-    }
-
-    if (_current_budget.compare_exchange_weak(current, new_budget, std::memory_order_relaxed)) {
-      break;
-    }
+  int new_budget = current + delta;
+  if (new_budget < 0) {
+    new_budget = 0;
+  } else if (new_budget > _max_budget) {
+    new_budget = _max_budget;
   }
+  _current_budget.store(new_budget, std::memory_order_relaxed);
+
+//  while (true) {
+//    int new_budget = current + delta;
+//    if (new_budget < 0) {
+//      new_budget = 0;
+//    } else if (new_budget > max_budget) {
+//      new_budget = max_budget;
+//    }
+//
+//    if (_current_budget.compare_exchange_weak(current, new_budget, std::memory_order_relaxed)) {
+//      break;
+//    }
+//  }
 }

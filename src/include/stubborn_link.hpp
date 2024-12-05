@@ -19,19 +19,15 @@
 
 using DeliverCallback = std::function<void(const Packet& pkt)>;
 
-//constexpr int sliding_window_size = 32;
-
 class StubbornLink {
 public:
   StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
                in_addr_t paddr, uint16_t pport,
                EventLoop &read_event_loop, EventLoop &write_event_loop,
                DeliverCallback _deliver_cb);
+  ~StubbornLink();
 
-//  void send(const Packet &pkt, std::ofstream &outfile, std::mutex &outfile_mutex);
-//  void send(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   void send(const std::vector<Packet> &packets);
-//  bool send_syn_packet();
   void stop();
 private:
   // We might relay messages from other processes, we want to check for the pair seq_id, pid
@@ -69,15 +65,14 @@ private:
   std::atomic<bool> _stop;
   std::default_random_engine _random_engine{std::random_device{}()};
 
-  std::atomic<int> _max_budget;             // Maximum number of packets
-  std::atomic<int> _current_budget;         // Remaining budget
-  int _budget_replenish_amount;             // Amount to replenish
-  int _budget_replenish_interval_ms;        // Replenish interval in ms
+  std::atomic<int> _current_budget;
+  static constexpr int _max_budget = 32;
+  static constexpr int _budget_replenish_amount = 16;
+  static constexpr int _budget_replenish_interval_ms = 100;
   std::chrono::steady_clock::time_point _last_replenish_time;
 
   void send_unacked_packets();
   void process_packet(const Packet &pkt);
-//  void store_and_output_messages(uint32_t n_messages, std::ofstream &outfile, std::mutex &outfile_mutex);
   void store_packets(const std::vector<Packet> &packets);
   int backoff_interval(int timeout);
   void adjust_budget(int amount);

@@ -14,10 +14,8 @@ PerfectLink::PerfectLink(uint64_t pid, in_addr_t addr, uint16_t port,
 
   for (const auto& host : hosts) {
     if (host.id == pid) {
-      // NOTE(kostas): Does it make sense to connect to ourselves?
       continue;
     }
-//    std::cerr << "Connecting to host: " << host.id << std::endl;
     _sl_map[host.id] = new StubbornLink(pid, addr, port, host.ip, host.port,
                                         read_event_loop, write_event_loop,
                                         [this](const Packet& pkt) {
@@ -40,8 +38,8 @@ void PerfectLink::deliver_packet(const Packet& pkt) {
       return;
     }
     _delivered.insert(p);
-
   }
+
   _deliver_cb(pkt);
 }
 

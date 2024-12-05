@@ -3,16 +3,16 @@
 #include "packet.hpp"
 
 Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id)
-    : _pid(pid), _type(type), _seq_id(seq_id) {}
+        : _pid(pid), _type(type), _seq_id(seq_id) {}
 
 Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data)
-    : _pid(pid), _type(type), _seq_id(seq_id), _data(data) {}
+        : _pid(pid), _type(type), _seq_id(seq_id), _data(data) {}
 
 uint64_t Packet::pid() const {
   return _pid;
 }
 
-PacketType Packet::packet_type() const {
+PacketType Packet::type() const {
   return _type;
 }
 
@@ -22,17 +22,6 @@ uint32_t Packet::seq_id() const {
 
 const std::vector<uint8_t>& Packet::data() const {
   return _data;
-}
-
-std::string Packet::type() const {
-  switch (_type) {
-    case PacketType::ACK:
-      return "ACK";
-    case PacketType::DATA:
-      return "DATA";
-    default:
-      return "UNKNOWN";
-  }
 }
 
 std::vector<uint8_t> Packet::serialize() const {

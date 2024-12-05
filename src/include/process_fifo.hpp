@@ -11,8 +11,8 @@
 #include "urb.hpp"
 
 //constexpr uint32_t event_loop_workers = 16;
-constexpr uint32_t read_event_loop_workers = 2;
-constexpr uint32_t write_event_loop_workers = 5;
+constexpr uint32_t read_event_loop_workers = 5;
+constexpr uint32_t write_event_loop_workers = 2;
 
 class ProcessFifo {
 public:
@@ -24,12 +24,10 @@ public:
     uint64_t pid() const;
     void run(const FifoConfig& cfg);
     void stop();
-//    EventLoop& event_loop();
 private:
     uint64_t _pid;
     in_addr_t _addr;
     uint16_t _port;
-//    EventLoop _event_loop;
     EventLoop _read_event_loop;
     EventLoop _write_event_loop;
     ThreadPool *_thread_pool;
@@ -41,8 +39,6 @@ private:
     std::ofstream _outfile;
     size_t _n_delivered_messages;
     std::atomic<bool> _stop{false};
-    std::mutex _stop_mutex;
-    std::condition_variable _stop_cv;
 
     std::chrono::steady_clock::time_point _start_time;
 

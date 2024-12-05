@@ -40,21 +40,17 @@ void Urb::stop() {
 void Urb::beb_broadcast(const std::vector<Packet>& packets) {
   // Deliver packets to self.
   for (const auto& pkt : packets) {
-//    std::cerr << "Process " << _pid << " delivering packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
     beb_deliver(pkt);
   }
 
   for (const auto& host : _hosts) {
     if (host.id != _pid) {
-//      std::cerr << "Process " << _pid << " sending packets to " << host.id << std::endl;
       _pl->send(packets, host.id);
-//      std::cerr << "Process " << _pid << " sent packets to " << host.id << std::endl;
     }
   }
 }
 
 void Urb::beb_deliver(const Packet& pkt) {
-//  std::cerr << "Process " << _pid << " received packet " << pkt.seq_id() << " from " << pkt.pid() << std::endl;
   {
     std::lock_guard<std::mutex> lock(_ack_proc_map_mutex);
     auto it = _ack_proc_map.find(pkt);
@@ -62,16 +58,13 @@ void Urb::beb_deliver(const Packet& pkt) {
       _ack_proc_map[pkt] = std::unordered_set<uint64_t>();
     }
     _ack_proc_map[pkt].insert(pkt.pid());
-//    std::cerr << "Process " << _pid << " received " << _ack_proc_map[pkt].size() << " acks for packet " << pkt.seq_id() << std::endl;
   }
 
   std::vector<Packet> packets;
   {
     std::lock_guard<std::mutex> lock(_pending_mutex);
-//    pending_t pending_pkt = {pkt, pkt.pid()};
     if (_pending.find(pkt) == _pending.end()) {
       _pending.insert(pkt);
-//      std::cerr << "Process " << _pid << " added packet " << pkt.seq_id() << " to pending set" << std::endl;
       packets.push_back(pkt);
     }
   }
@@ -103,7 +96,6 @@ void Urb::do_deliver(const Packet& pkt) {
 }
 
 void Urb::monitor_delivery() {
-//  std::cerr << "Process " << _pid << " started monitor_deliver" << std::endl;
   while (!_stop.load()) {
     std::vector<Packet> pending_packets;
     {
@@ -119,5 +111,4 @@ void Urb::monitor_delivery() {
       }
     }
   }
-//  std::cerr << "Process " << _pid << " stopped monitor_deliver" << std::endl;
 }
