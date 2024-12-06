@@ -29,7 +29,7 @@ void ReadEventHandler::handle_read_event(uint32_t events) {
       Packet pkt;
       buffer.resize(static_cast<size_t>(nrecv));
       pkt.deserialize(buffer);
-      _process_pkt_callback(pkt);
+      _process_pkt_callback(std::move(pkt));
     }
   }
 }

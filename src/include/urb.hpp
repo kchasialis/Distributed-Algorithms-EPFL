@@ -16,7 +16,8 @@ public:
         ThreadPool *_thread_pool, DeliverCallback deliver_cb);
     ~Urb();
 
-    void broadcast(const std::vector<Packet>& packets);
+//    void broadcast(const std::vector<Packet>& packets);
+    void broadcast(std::vector<Packet>& packets);
     void stop();
 private:
     struct PendingEqual {
@@ -41,18 +42,30 @@ private:
     uint16_t _port;
     PerfectLink *_pl;
     std::vector<Parser::Host> _hosts;
-    std::unordered_map<Packet, std::unordered_set<uint64_t>, PacketHash, PacketEqual> _ack_proc_map;
+
+//    std::array<std::unordered_map<Packet, std::unordered_set<uint64_t>, PacketHash, PacketEqual>, MAX_PROCESSES> _ack_proc_maps;
+//    std::array<std::mutex, MAX_PROCESSES> _ack_proc_map_mutexes;
+
+    std::vector<std::unordered_set<Packet, PendingHash, PendingEqual>> _pending_sets;
+    std::vector<std::mutex> _pending_mutexes;
+
+//    std::unordered_map<Packet, std::unordered_set<uint64_t>, PacketHash, PacketEqual> _ack_proc_map;
+    std::unordered_map<uint32_t, std::unordered_set<uint64_t>> _ack_proc_map;
     std::mutex _ack_proc_map_mutex;
-    std::unordered_set<Packet, PendingHash, PendingEqual> _pending;
-    std::mutex _pending_mutex;
-    std::unordered_set<delivered_t, DeliveredHash, DeliveredEqual> _delivered;
-    std::mutex _delivered_mutex;
+//
+//    std::unordered_set<Packet, PendingHash, PendingEqual> _pending;
+//    std::mutex _pending_mutex;
+
     std::atomic<bool> _stop;
     DeliverCallback _deliver_cb;
 
-    void beb_broadcast(const std::vector<Packet>& packets);
-    void beb_deliver(const Packet& pkt);
+//    void beb_broadcast(const std::vector<Packet>& packets);
+    void beb_broadcast(std::vector<Packet>& packets);
+    void beb_deliver(Packet &&pkt);
+//    void beb_deliver(const Packet& pkt);
     bool can_deliver(const Packet& pkt);
-    void do_deliver(const Packet& pkt);
-    void monitor_delivery();
+    void do_deliver(Packet &&pkt);
+//    void do_deliver(const Packet& pkt);
+    void monitor_delivery(size_t thread_id, size_t total_threads);
+//    void monitor_delivery();
 };

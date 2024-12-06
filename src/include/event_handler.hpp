@@ -6,7 +6,8 @@
 #include "event_loop.hpp"
 #include "packet.hpp"
 
-using ReadCallback = std::function<void(const Packet& pkt)>;
+//using ReadCallback = std::function<void(const Packet& pkt)>;
+using ReadCallback = std::function<void(Packet &&pkt)>;
 using WriteCallback = std::function<void()>;
 
 class ReadEventHandler {

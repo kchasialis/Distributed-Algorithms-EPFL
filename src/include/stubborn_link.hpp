@@ -17,7 +17,8 @@
 #include "parser.hpp"
 #include "event_handler.hpp"
 
-using DeliverCallback = std::function<void(const Packet& pkt)>;
+//using DeliverCallback = std::function<void(const Packet& pkt)>;
+using DeliverCallback = std::function<void(Packet &&pkt)>;
 
 class StubbornLink {
 public:
@@ -72,7 +73,8 @@ private:
   std::chrono::steady_clock::time_point _last_replenish_time;
 
   void send_unacked_packets();
-  void process_packet(const Packet &pkt);
+  void process_packet(Packet &&pkt);
+//  void process_packet(const Packet &pkt);
   void store_packets(const std::vector<Packet> &packets);
   int backoff_interval(int timeout);
   void adjust_budget(int amount);
