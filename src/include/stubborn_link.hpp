@@ -74,7 +74,6 @@ private:
 
   void send_unacked_packets();
   void process_packet(Packet &&pkt);
-//  void process_packet(const Packet &pkt);
   void store_packets(const std::vector<Packet> &packets);
   int backoff_interval(int timeout);
   void adjust_budget(int amount);

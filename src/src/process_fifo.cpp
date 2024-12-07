@@ -25,11 +25,6 @@ ProcessFifo::ProcessFifo(uint64_t pid, in_addr_t addr, uint16_t port,
 
   _thread_pool = new ThreadPool(8);
 
-//  _urb = new Urb(pid, addr, port, hosts, _read_event_loop, _write_event_loop,
-//                 _thread_pool, [this](const Packet& pkt) {
-//                   this->urb_deliver(pkt);
-//                 });
-
   _urb = new Urb(pid, addr, port, hosts, _read_event_loop, _write_event_loop,
                  _thread_pool, [this](Packet &&pkt) {
               this->urb_deliver(std::move(pkt));
@@ -97,36 +92,12 @@ void ProcessFifo::run(const FifoConfig& cfg) {
   _read_event_loop.run();
 }
 
-//void ProcessFifo::urb_deliver(const Packet &pkt) {
-//  std::vector<Packet> to_deliver;
-//  {
-//    std::lock_guard<std::mutex> lock(_pending_mutex);
-//    _pending[pkt.pid()].insert(pkt);
-//
-//    auto &packets = _pending[pkt.pid()];
-//    for (auto it = packets.begin(); it != packets.end();) {
-//      if (it->seq_id() == _next[pkt.pid()]) {
-//        to_deliver.push_back(*it);
-//        it = packets.erase(it);
-//        _next[pkt.pid()]++;
-//      } else {
-//        ++it;
-//      }
-//    }
-//  }
-//
-//  for (const auto &d_pkt: to_deliver) {
-//    fifo_deliver(d_pkt);
-//  }
-//}
-
 void ProcessFifo::urb_deliver(Packet &&pkt) {
   std::vector<Packet> to_deliver;
 
   size_t index = pkt.pid() - 1;
 
   _pending[index].push_back(pkt);
-//  _pending[index].push(pkt);
   auto &packets = _pending[index];
   to_deliver.reserve(packets.size());
 
@@ -135,7 +106,6 @@ void ProcessFifo::urb_deliver(Packet &&pkt) {
     for (auto it = packets.begin(); it != packets.end();) {
       if (it->seq_id() == _next[index]) {
         to_deliver.push_back(std::move(*it));
-//        it = packets.erase(it);
         _next[index]++;
         found = true;
       } else {
@@ -147,60 +117,8 @@ void ProcessFifo::urb_deliver(Packet &&pkt) {
     }
   }
 
-//  for (auto it = packets.begin(); it != packets.end();) {
-//    if (it->seq_id() == _next[index]) {
-//      to_deliver.push_back(*it);
-//      it = packets.erase(it);
-//      _next[index]++;
-//    } else {
-//      ++it;
-//    }
-//  }
-
-
   fifo_deliver_all(to_deliver);
 }
-
-//void ProcessFifo::urb_deliver(const Packet &pkt) {
-//  std::vector<Packet> to_deliver;
-//
-//  size_t index = pkt.pid() - 1;
-//
-//  _pending[index].push_back(pkt);
-////  _pending[index].push(pkt);
-//  auto &packets = _pending[index];
-//  to_deliver.reserve(packets.size());
-//
-//  while (true) {
-//    bool found = false;
-//    for (auto it = packets.begin(); it != packets.end();) {
-//      if (it->seq_id() == _next[index]) {
-//        to_deliver.push_back(std::move(*it));
-////        it = packets.erase(it);
-//        _next[index]++;
-//        found = true;
-//      } else {
-//        ++it;
-//      }
-//    }
-//    if (!found) {
-//      break;
-//    }
-//  }
-//
-////  for (auto it = packets.begin(); it != packets.end();) {
-////    if (it->seq_id() == _next[index]) {
-////      to_deliver.push_back(*it);
-////      it = packets.erase(it);
-////      _next[index]++;
-////    } else {
-////      ++it;
-////    }
-////  }
-//
-//
-//  fifo_deliver_all(to_deliver);
-//}
 
 void ProcessFifo::fifo_deliver_all(const std::vector<Packet>& packets) {
   std::lock_guard<std::mutex> lock(_outfile_mutex);
@@ -210,7 +128,6 @@ void ProcessFifo::fifo_deliver_all(const std::vector<Packet>& packets) {
 }
 
 void ProcessFifo::fifo_deliver(const Packet& pkt) {
-//  std::lock_guard<std::mutex> lock(_outfile_mutex);
   for (size_t i = 0; i < pkt.data().size(); i += sizeof(uint32_t)) {
     uint32_t seq_id;
     std::memcpy(&seq_id, pkt.data().data() + i, sizeof(uint32_t));

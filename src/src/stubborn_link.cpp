@@ -121,7 +121,7 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
 }
 
 void StubbornLink::send_unacked_packets() {
-  const int initial_interval_ms = 50;
+  const int initial_interval_ms = 10;
   const int max_interval_ms = 1000;
   int timeout_interval_ms = initial_interval_ms;
 
@@ -201,24 +201,24 @@ void StubbornLink::adjust_budget(int delta) {
   int current = _current_budget.load(std::memory_order_relaxed);
 //  int max_budget = _max_budget.load(std::memory_order_relaxed);
 
-  int new_budget = current + delta;
-  if (new_budget < 0) {
-    new_budget = 0;
-  } else if (new_budget > _max_budget) {
-    new_budget = _max_budget;
-  }
-  _current_budget.store(new_budget, std::memory_order_relaxed);
-
-//  while (true) {
-//    int new_budget = current + delta;
-//    if (new_budget < 0) {
-//      new_budget = 0;
-//    } else if (new_budget > _max_budget) {
-//      new_budget = _max_budget;
-//    }
-//
-//    if (_current_budget.compare_exchange_weak(current, new_budget, std::memory_order_relaxed)) {
-//      break;
-//    }
+//  int new_budget = current + delta;
+//  if (new_budget < 0) {
+//    new_budget = 0;
+//  } else if (new_budget > _max_budget) {
+//    new_budget = _max_budget;
 //  }
+//  _current_budget.store(new_budget, std::memory_order_relaxed);
+
+  while (true) {
+    int new_budget = current + delta;
+    if (new_budget < 0) {
+      new_budget = 0;
+    } else if (new_budget > _max_budget) {
+      new_budget = _max_budget;
+    }
+
+    if (_current_budget.compare_exchange_weak(current, new_budget, std::memory_order_relaxed)) {
+      break;
+    }
+  }
 }
