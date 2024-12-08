@@ -17,7 +17,6 @@
 #include "parser.hpp"
 #include "event_handler.hpp"
 
-//using DeliverCallback = std::function<void(const Packet& pkt)>;
 using DeliverCallback = std::function<void(Packet &&pkt)>;
 
 class StubbornLink {

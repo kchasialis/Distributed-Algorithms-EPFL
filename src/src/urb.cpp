@@ -66,16 +66,6 @@ void Urb::broadcast(std::vector<Packet>& packets) {
   beb_broadcast(packets);
 }
 
-//void Urb::broadcast(std::vector<Packet>& packets) {
-//  for (const auto& pkt : packets) {
-//    size_t index = pkt.pid() - 1;
-//    std::lock_guard<std::mutex> lock(_pending_mutexes[index]);
-//    _pending_sets[index].insert(pkt);
-//  }
-//
-//  beb_broadcast(packets);
-//}
-
 void Urb::beb_deliver(Packet&& pkt) {
   size_t index = pkt.pid() - 1;
 

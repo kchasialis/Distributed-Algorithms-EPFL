@@ -31,14 +31,6 @@ private:
     ThreadPool *_thread_pool;
     Urb *_urb;
 
-//    std::mutex _pending_mutex;
-//    std::unordered_map<uint64_t, std::set<Packet, PacketLess>> _pending; // pid -> packets
-//    std::unordered_map<uint64_t, uint32_t> _next; // pid -> seq_id
-
-//    std::map<uint32_t, Packet> _pending[MAX_PROCESSES];
-//    std::set<Packet, PacketLess> _pending[MAX_PROCESSES];
-//    std::atomic<uint32_t> _next[MAX_PROCESSES];
-//    std::vector<std::set<Packet, PacketLess>> _pending;
     std::vector<std::vector<Packet>> _pending;
     std::vector<std::atomic<uint32_t>> _next;
 
@@ -49,9 +41,7 @@ private:
 
     std::chrono::steady_clock::time_point _start_time;
 
-//    void urb_deliver(const Packet& pkt);
     void urb_deliver(Packet &&pkt);
-//    void urb_deliver(Packet &&pkt);
     void fifo_deliver_all(const std::vector<Packet>& packets);
     void fifo_deliver(const Packet& pkt);
 };

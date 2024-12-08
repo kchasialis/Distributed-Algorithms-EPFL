@@ -64,7 +64,8 @@ static FifoConfig read_config_file_fifo(const std::string &configPath) {
 static int run_process(Parser &parser, const FifoConfig& cfg) {
   Parser::Host current_host;
   bool found = false;
-  for (const auto &host: parser.hosts()) {
+  auto hosts = parser.hosts();
+  for (const auto &host: hosts) {
     if (host.id == parser.id()) {
       current_host = host;
       found = true;
@@ -79,7 +80,7 @@ static int run_process(Parser &parser, const FifoConfig& cfg) {
 //  std::cerr << "I am process with id: " << parser.id() << std::endl;
 
   ProcessFifo process(parser.id(), current_host.ip, current_host.port,
-                      parser.hosts(), cfg, parser.outputPath());
+                      hosts, cfg, parser.outputPath());
 
 //  {
 //    std::lock_guard<std::mutex> lock(signal_handler_mutex);

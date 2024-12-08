@@ -23,8 +23,6 @@ StubbornLink::StubbornLink(uint64_t pid, in_addr_t addr, uint16_t port,
   _pport = pport;
   _peer_addr = peer_addr;
 
-//  _read_event_handler = new ReadEventHandler(&_socket,
-//                                             [this](const Packet& pkt) { this->process_packet(pkt); });
   _read_event_handler = new ReadEventHandler(&_socket,
                                              [this](Packet &&pkt) { this->process_packet(std::move(pkt)); });
   _read_event_data.events = EPOLLIN;
@@ -77,39 +75,6 @@ void StubbornLink::process_packet(Packet &&pkt) {
       break;
   }
 }
-
-//void StubbornLink::process_packet(const Packet& pkt) {
-//  switch (pkt.type()) {
-//    case PacketType::ACK:
-//    {
-//      bool found;
-//      {
-//        std::lock_guard<std::mutex> lock(_unacked_mutex);
-//        found = _unacked_packets.erase(pkt) > 0;
-//      }
-//
-//      if (found) {
-//        // ACK received. We need to replenish the budget.
-//        adjust_budget(1);
-//      }
-//      break;
-//    }
-//    case PacketType::DATA:
-//    {
-//      // It is a data packet.
-//
-//      // Send an ACK.
-//      Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
-//      _socket.send_buf(ack_pkt.serialize());
-//
-//      _deliver_cb(pkt);
-//      break;
-//    }
-//    default:
-//      std::cerr << "Unknown packet type!" << std::endl;
-//      break;
-//  }
-//}
 
 void StubbornLink::store_packets(const std::vector<Packet> &packets) {
   {
@@ -199,15 +164,6 @@ int StubbornLink::backoff_interval(int timeout) {
 
 void StubbornLink::adjust_budget(int delta) {
   int current = _current_budget.load(std::memory_order_relaxed);
-//  int max_budget = _max_budget.load(std::memory_order_relaxed);
-
-//  int new_budget = current + delta;
-//  if (new_budget < 0) {
-//    new_budget = 0;
-//  } else if (new_budget > _max_budget) {
-//    new_budget = _max_budget;
-//  }
-//  _current_budget.store(new_budget, std::memory_order_relaxed);
 
   while (true) {
     int new_budget = current + delta;
