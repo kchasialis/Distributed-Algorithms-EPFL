@@ -2,10 +2,12 @@
 #include <iostream>
 #include <thread>
 #include <csignal>
+#include <mutex>
+#include <functional>
 
 #include "config.hpp"
 #include "parser.hpp"
-#include "process_fifo.hpp"
+#include "process_lattice.hpp"
 
 std::mutex signal_handler_mutex;
 std::function<void()> signal_handler;
@@ -29,39 +31,8 @@ static void register_signals() {
   signal(SIGINT, stop);
 }
 
-static PlConfig read_config_file_pl(const std::string &configPath) {
-  std::ifstream config_file(configPath);
-  if (!config_file) {
-    std::cerr << "Failed to open config file: " << configPath << std::endl;
-    exit(1);
-  }
 
-  uint32_t n_messages, receiver_proc;
-  if (!(config_file >> n_messages >> receiver_proc)) {
-    std::cerr << "Failed to read config values from: " << configPath << std::endl;
-    exit(1);
-  }
-
-  return {n_messages, receiver_proc};
-}
-
-static FifoConfig read_config_file_fifo(const std::string &configPath) {
-  std::ifstream config_file(configPath);
-  if (!config_file) {
-    std::cerr << "Failed to open config file: " << configPath << std::endl;
-    exit(1);
-  }
-
-  uint32_t n_messages;
-  if (!(config_file >> n_messages)) {
-    std::cerr << "Failed to read config values from: " << configPath << std::endl;
-    exit(1);
-  }
-
-  return {n_messages};
-}
-
-static int run_process(Parser &parser, const FifoConfig& cfg) {
+static int run_process(Parser &parser, const LatticeConfig& cfg) {
   Parser::Host current_host;
   bool found = false;
   auto hosts = parser.hosts();
@@ -77,12 +48,14 @@ static int run_process(Parser &parser, const FifoConfig& cfg) {
     return 1;
   }
 
-  ProcessFifo process(parser.id(), current_host.ip, current_host.port,
-                      hosts, cfg, parser.outputPath());
+  std::cerr << "Starting process with id: " << parser.id() << std::endl;
+
+  ProcessLattice process(parser.id(), current_host.ip, current_host.port,
+                         hosts, cfg, parser.outputPath());
 
   signal_handler = [&process]() { process.stop(); };
 
-  process.run(cfg);
+  process.run();
 
   return 0;
 }
@@ -91,9 +64,9 @@ int main(int argc, char **argv) {
   register_signals();
   Parser parser(argc, argv);
   parser.parse();
-  FifoConfig cfg = read_config_file_fifo(parser.configPath());
+  LatticeConfig lattice_cfg(parser.configPath());
 
-  int err = run_process(parser, cfg);
+  int err = run_process(parser, lattice_cfg);
   if (err != 0) {
     std::cerr << "Failed to run process with id: " << parser.id() << std::endl;
     return err;
@@ -101,7 +74,7 @@ int main(int argc, char **argv) {
 
   // `true` means that a config file is required.
   // Call with `false` if no config file is necessary.
-  bool requireConfig = true;
+//  bool requireConfig = true;
 
 //   After a process finishes broadcasting,
 //   it waits forever for the delivery of messages.

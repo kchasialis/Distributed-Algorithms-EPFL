@@ -8,6 +8,9 @@ Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id)
 Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data)
         : _pid(pid), _type(type), _seq_id(seq_id), _data(data) {}
 
+Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data)
+        : _pid(pid), _type(type), _seq_id(seq_id), _data(std::move(data)) {}
+
 uint64_t Packet::pid() const {
   return _pid;
 }
@@ -24,8 +27,9 @@ const std::vector<uint8_t>& Packet::data() const {
   return _data;
 }
 
-std::vector<uint8_t> Packet::serialize() const {
-  std::vector<uint8_t> buffer;
+void Packet::serialize(std::vector<uint8_t>& buffer) const {
+  buffer.clear();
+  buffer.reserve(HEADER_SIZE + _data.size());
 
   auto bytes = reinterpret_cast<const uint8_t*>(&_pid);
   buffer.insert(buffer.end(), bytes, bytes + sizeof(_pid));
@@ -40,8 +44,6 @@ std::vector<uint8_t> Packet::serialize() const {
   bytes = reinterpret_cast<const uint8_t*>(&data_size);
   buffer.insert(buffer.end(), bytes, bytes + sizeof(data_size));
   buffer.insert(buffer.end(), _data.begin(), _data.end());
-
-  return buffer;
 }
 
 

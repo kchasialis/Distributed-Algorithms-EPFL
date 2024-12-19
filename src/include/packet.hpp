@@ -23,11 +23,12 @@ public:
     Packet() = default;
     Packet(uint64_t pid, PacketType type, uint32_t seq_id);
     Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data);
+    Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data);
     uint64_t pid() const;
     PacketType type() const;
     uint32_t seq_id() const;
     const std::vector<uint8_t>& data() const;
-    std::vector<uint8_t> serialize() const;
+    void serialize(std::vector<uint8_t> &buffer) const;
     void deserialize(const std::vector<uint8_t>& buffer);
 
     bool operator==(const Packet& rhs) const;

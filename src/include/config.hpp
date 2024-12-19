@@ -2,12 +2,13 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <vector>
+#include <string>
 
-// These have to add up to 8.
-constexpr uint32_t read_event_loop_workers = 4;
-constexpr uint32_t write_event_loop_workers = 2;
-constexpr uint32_t monitor_delivery_workers = 2;
-static_assert(read_event_loop_workers + write_event_loop_workers + monitor_delivery_workers == 8);
+constexpr uint32_t read_event_loop_workers = 0;
+constexpr uint32_t write_event_loop_workers = 1;
+//constexpr uint32_t monitor_delivery_workers = 2;
+static_assert(read_event_loop_workers + write_event_loop_workers <= 8);
 
 class PlConfig {
 private:
@@ -15,7 +16,7 @@ private:
     uint32_t _receiver_proc;
 
 public:
-    PlConfig(uint32_t num_messages, uint32_t receiver_proc);
+    PlConfig(const std::string &config_path);
     uint32_t num_messages() const;
     uint32_t receiver_proc() const;
 };
@@ -25,6 +26,18 @@ private:
     uint32_t _num_messages;
 
 public:
-    FifoConfig(uint32_t num_messages);
+    FifoConfig(const std::string &config_path);
     uint32_t num_messages() const;
+};
+
+class LatticeConfig {
+private:
+  uint32_t _max_distinct_all_prop;
+  std::vector<std::vector<uint32_t>> _proposals;
+
+public:
+  LatticeConfig(const std::string &config_path);
+  uint32_t max_distinct_props() const;
+  size_t num_proposals() const;
+  const std::vector<uint32_t>& proposals(uint32_t idx) const;
 };

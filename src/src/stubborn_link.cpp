@@ -65,7 +65,9 @@ void StubbornLink::process_packet(Packet &&pkt) {
 
       // Send an ACK.
       Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
-      _socket.send_buf(ack_pkt.serialize());
+      std::vector<uint8_t> buffer;
+      ack_pkt.serialize(buffer);
+      _socket.send_buf(buffer);
 
       _deliver_cb(std::move(pkt));
       break;
@@ -111,8 +113,9 @@ void StubbornLink::send_unacked_packets() {
     // Send packets within the current budget
     size_t sent = 0;
     for (const auto& pkt : packets_to_send) {
-      auto pkt_serialized = pkt.serialize();
-      ssize_t nsent = _socket.send_buf(pkt_serialized);
+      std::vector<uint8_t> buffer;
+      pkt.serialize(buffer);
+      ssize_t nsent = _socket.send_buf(buffer);
       if (nsent == -1) {
         if (errno == EWOULDBLOCK) {
           break;
