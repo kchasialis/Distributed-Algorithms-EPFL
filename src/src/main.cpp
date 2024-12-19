@@ -77,20 +77,12 @@ static int run_process(Parser &parser, const FifoConfig& cfg) {
     return 1;
   }
 
-//  std::cerr << "I am process with id: " << parser.id() << std::endl;
-
   ProcessFifo process(parser.id(), current_host.ip, current_host.port,
                       hosts, cfg, parser.outputPath());
-
-//  {
-//    std::lock_guard<std::mutex> lock(signal_handler_mutex);
-//    signal_handler = [&process]() { process.stop(); };
-//  }
 
   signal_handler = [&process]() { process.stop(); };
 
   process.run(cfg);
-//  process.stop();
 
   return 0;
 }
