@@ -48,6 +48,10 @@ void PerfectLink::send(const std::vector<Packet> &packets, uint64_t peer) {
   _sl_map[peer]->send(packets);
 }
 
+void PerfectLink::send(const Packet &packet, uint64_t peer) {
+  _sl_map[peer]->send(packet);
+}
+
 void PerfectLink::stop() {
   for (auto& sl : _sl_map) {
     sl.second->stop();

@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <array>
 
 enum class LatticeMessageType : uint8_t {
     PROPOSAL = 0,
@@ -9,14 +10,16 @@ enum class LatticeMessageType : uint8_t {
     DECIDE = 2
 };
 
+// Batch 8 messages at a time.
+constexpr uint32_t BATCH_MSG_SIZE = 8;
+
 class LatticeMessage {
 public:
   LatticeMessage() = default;
   LatticeMessage(LatticeMessageType type, std::vector<uint8_t>&& data);
   void serialize(std::vector<uint8_t> &buffer);
   void deserialize(const std::vector<uint8_t> &buffer);
-  void set_data(std::vector<uint8_t>&& data);
-  const std::vector<uint8_t>& get_data() const;
+  const std::vector<uint8_t>& data() const;
   LatticeMessageType type() const;
 
 private:
@@ -24,32 +27,50 @@ private:
   std::vector<uint8_t> _data;
 };
 
+struct Proposal {
+  std::vector<uint32_t> proposed_value{};
+  uint32_t active_proposal_number = 0;
+};
+
 class ProposalMessage {
 public:
-  ProposalMessage() = default;
-  ProposalMessage(const std::vector<uint32_t> &proposal, uint32_t active_proposal_number);
+  ProposalMessage();
+  void add_proposal(Proposal &&proposal);
+  const std::vector<Proposal>& proposals() const;
   void serialize(std::vector<uint8_t> &buffer);
   void deserialize(const std::vector<uint8_t> &buffer);
-  const std::vector<uint32_t>& proposal() const;
-  uint32_t active_proposal_number() const;
 private:
-  std::vector<uint32_t> _proposal{};
-  uint32_t _active_proposal_number = 0;
+  std::vector<Proposal> _proposals;
+};
+
+struct Accept {
+  bool nack;
+  uint32_t proposal_number;
+  std::vector<uint32_t> accepted_value;
 };
 
 class AcceptMessage {
 public:
-    void serialize();
-    void deserialize();
+  AcceptMessage();
+  void add_accept(Accept &&accept);
+  const std::vector<Accept>& accepts() const;
+  void serialize(std::vector<uint8_t> &buffer);
+  void deserialize(const std::vector<uint8_t> &buffer);
 
 private:
-    // FILLME.
+  std::vector<Accept> _accepts;
 };
 
-struct DecideMessage {
+struct Decide {
+  // NOTE(kostas): FILLME.
+};
+
+class DecideMessage {
 public:
-    void serialize();
-    void deserialize();
+  DecideMessage() = default;
+  void add_decision(Decide &&decision);
+  void serialize(std::vector<uint8_t> &buffer);
+  void deserialize(const std::vector<uint8_t> &buffer);
 private:
-    // FILLME.
+  std::vector<Decide> _decisions;
 };

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <functional>
 #include <vector>
+#include <atomic>
 
 enum class PacketType {
     DATA,
@@ -19,11 +20,16 @@ private:
     uint32_t _seq_id;
     std::vector<uint8_t> _data;
 
+    static std::atomic<uint32_t> _global_seq_id;
+
 public:
     Packet() = default;
+    Packet(uint64_t pid, PacketType type);
+    Packet(uint64_t pid, PacketType type, const std::vector<uint8_t>& data);
+    Packet(uint64_t pid, PacketType type, std::vector<uint8_t>&& data);
     Packet(uint64_t pid, PacketType type, uint32_t seq_id);
-    Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data);
-    Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data);
+//    Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data);
+//    Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data);
     uint64_t pid() const;
     PacketType type() const;
     uint32_t seq_id() const;

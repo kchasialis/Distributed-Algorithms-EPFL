@@ -42,6 +42,7 @@ public:
   ~PerfectLink();
 
   void send(const std::vector<Packet> &packets, uint64_t peer);
+  void send(const Packet &packet, uint64_t peer);
   void stop();
 };
 

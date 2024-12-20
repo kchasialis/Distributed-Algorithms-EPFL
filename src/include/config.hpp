@@ -38,6 +38,6 @@ private:
 public:
   LatticeConfig(const std::string &config_path);
   uint32_t max_distinct_props() const;
-  size_t num_proposals() const;
+  uint32_t num_proposals() const;
   const std::vector<uint32_t>& proposals(uint32_t idx) const;
 };

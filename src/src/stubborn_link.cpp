@@ -61,8 +61,6 @@ void StubbornLink::process_packet(Packet &&pkt) {
     }
     case PacketType::DATA:
     {
-      // It is a data packet.
-
       // Send an ACK.
       Packet ack_pkt(pkt.pid(), PacketType::ACK, pkt.seq_id());
       std::vector<uint8_t> buffer;
@@ -84,6 +82,13 @@ void StubbornLink::store_packets(const std::vector<Packet> &packets) {
     for (const auto &pkt : packets) {
       _unacked_packets.insert(pkt);
     }
+  }
+}
+
+void StubbornLink::store_packet(const Packet &packet) {
+  {
+    std::lock_guard<std::mutex> lock(_unacked_mutex);
+    _unacked_packets.insert(packet);
   }
 }
 
@@ -154,6 +159,10 @@ void StubbornLink::send_unacked_packets() {
 
 void StubbornLink::send(const std::vector<Packet> &packets) {
   store_packets(packets);
+}
+
+void StubbornLink::send(const Packet &packet) {
+  store_packet(packet);
 }
 
 void StubbornLink::stop() {

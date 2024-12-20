@@ -95,8 +95,8 @@ uint32_t LatticeConfig::max_distinct_props() const {
   return _max_distinct_all_prop;
 }
 
-size_t LatticeConfig::num_proposals() const {
-  return _proposals.size();
+uint32_t LatticeConfig::num_proposals() const {
+  return static_cast<uint32_t>(_proposals.size());
 }
 
 const std::vector<uint32_t>& LatticeConfig::proposals(uint32_t idx) const {

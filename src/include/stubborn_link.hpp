@@ -28,6 +28,7 @@ public:
   ~StubbornLink();
 
   void send(const std::vector<Packet> &packets);
+  void send(const Packet &packet);
   void stop();
 private:
   // We might relay messages from other processes, we want to check for the pair seq_id, pid
@@ -74,6 +75,7 @@ private:
   void send_unacked_packets();
   void process_packet(Packet &&pkt);
   void store_packets(const std::vector<Packet> &packets);
+  void store_packet(const Packet &packet);
   int backoff_interval(int timeout);
   void adjust_budget(int amount);
 };
