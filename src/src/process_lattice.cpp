@@ -15,11 +15,11 @@ ProcessLattice::ProcessLattice(uint64_t pid, in_addr_t addr, uint16_t port,
 
   _thread_pool = new ThreadPool(8);
 
-//  for (uint32_t i = 0; i < read_event_loop_workers; i++) {
-//    _thread_pool->enqueue([this] {
-//        this->_read_event_loop.run();
-//    });
-//  }
+  for (uint32_t i = 0; i < read_event_loop_workers; i++) {
+    _thread_pool->enqueue([this] {
+        this->_read_event_loop.run();
+    });
+  }
   for (uint32_t i = 0; i < write_event_loop_workers; i++) {
     _thread_pool->enqueue([this] {
         this->_write_event_loop.run();
@@ -71,15 +71,26 @@ void ProcessLattice::run() {
 //    packets.push_back(std::move(pkt));
 //  }
 
-  _round.active = true;
-  _round.ack_count = 0;
-  _round.nack_count = 0;
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
+  round.active = true;
+  round.ack_count = 0;
+  round.nack_count = 0;
 
   ProposalMessage proposal_msg;
   Proposal proposal;
   proposal.proposed_value = _cfg.proposals(0);
-  proposal.active_proposal_number = ++_round.active_proposal_number;
+  proposal.active_proposal_number = ++round.active_proposal_number;
   proposal_msg.add_proposal(std::move(proposal));
+
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    _round = round;
+  }
 
   propose(proposal_msg);
 
@@ -164,8 +175,14 @@ void ProcessLattice::propose(ProposalMessage &proposal_msg) {
 }
 
 void ProcessLattice::decide() {
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
   std::cerr << "Decided value:" << std::endl;
-  for (const auto& value : _round.proposed_value) {
+  for (const auto& value : round.proposed_value) {
     std::cerr << value << " ";
   }
   std::cerr << std::endl;
@@ -173,11 +190,16 @@ void ProcessLattice::decide() {
   {
     std::lock_guard<std::mutex> lock(_outfile_mutex);
     _outfile << "Decided value: ";
-    for (const auto& value : _round.proposed_value) {
+    for (const auto& value : round.proposed_value) {
       _outfile << value << " ";
     }
   }
-  _round.active = false;
+  round.active = false;
+
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    _round = round;
+  }
 }
 
 void ProcessLattice::handle_proposal_msg(const ProposalMessage &proposal_msg, uint64_t sender_pid) {
@@ -190,27 +212,38 @@ void ProcessLattice::handle_proposal_msg(const ProposalMessage &proposal_msg, ui
   }
   std::cerr << std::endl;
 
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
   std::remove_copy_if(
           proposal.proposed_value.begin(),
           proposal.proposed_value.end(),
-          std::back_inserter(_round.proposed_value),
-          [this](const uint32_t& item) {
-              return std::find(_round.proposed_value.begin(),
-                               _round.proposed_value.end(), item)
-                     != _round.proposed_value.end();
+          std::back_inserter(round.proposed_value),
+          [&round](const uint32_t& item) {
+              return std::find(round.proposed_value.begin(),
+                               round.proposed_value.end(), item)
+                     != round.proposed_value.end();
           }
   );
 
   Accept accept;
   accept.proposal_number = proposal.active_proposal_number;
-  if (_round.proposed_value.size() == proposal.proposed_value.size()) {
+  if (round.proposed_value.size() == proposal.proposed_value.size()) {
     std::cerr << "Accepting proposal" << std::endl;
     accept.nack = false;
     accept.accepted_value = std::move(proposal.proposed_value);
   } else {
     std::cerr << "Rejecting proposal" << std::endl;
     accept.nack = true;
-    accept.accepted_value = _round.accepted_value;
+    accept.accepted_value = round.accepted_value;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    _round = round;
   }
 
   Packet pkt;
@@ -234,56 +267,98 @@ void ProcessLattice::handle_accept_msg(const AcceptMessage &accept_msg, uint64_t
 }
 
 void ProcessLattice::handle_ack_msg(const Accept &accept) {
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
   std::cerr << "Ack message received" << std::endl;
   std::cerr << "Proposal number: " << accept.proposal_number << std::endl;
-  std::cerr << "Round active proposal number: " << _round.active_proposal_number << std::endl;
-  if (accept.proposal_number == _round.active_proposal_number) {
-    _round.ack_count++;
+  std::cerr << "Round active proposal number: " << round.active_proposal_number << std::endl;
+  if (accept.proposal_number == round.active_proposal_number) {
+    round.ack_count++;
+
+    {
+      std::lock_guard<std::mutex> lock(_round_mutex);
+      _round = round;
+    }
+
     check_ack_nack();
   }
 }
 
 void ProcessLattice::handle_nack_msg(const Accept &accept) {
-  if (accept.proposal_number == _round.active_proposal_number) {
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
+  if (accept.proposal_number == round.active_proposal_number) {
     std::remove_copy_if(
             accept.accepted_value.begin(),
             accept.accepted_value.end(),
-            std::back_inserter(_round.proposed_value),
-            [this](const uint32_t& item) {
-                return std::find(_round.proposed_value.begin(),
-                                 _round.proposed_value.end(), item)
-                       != _round.proposed_value.end();
+            std::back_inserter(round.proposed_value),
+            [&round](const uint32_t& item) {
+                return std::find(round.proposed_value.begin(),
+                                 round.proposed_value.end(), item)
+                       != round.proposed_value.end();
             }
     );
-    _round.nack_count++;
+    round.nack_count++;
+
+    {
+      std::lock_guard<std::mutex> lock(_round_mutex);
+      _round = round;
+    }
+
     check_ack_nack();
   }
 }
 
 void ProcessLattice::check_ack_nack() {
+  Round round;
+  {
+    std::lock_guard<std::mutex> lock(_round_mutex);
+    round = _round;
+  }
+
   uint32_t majority = static_cast<uint32_t>(_hosts.size()) / 2 + 1;
-  std::cerr << "Ack count: " << _round.ack_count << std::endl;
-  std::cerr << "Nack count: " << _round.nack_count << std::endl;
+  std::cerr << "Ack count: " << round.ack_count << std::endl;
+  std::cerr << "Nack count: " << round.nack_count << std::endl;
   std::cerr << "Majority: " << majority << std::endl;
-  std::cerr << "Active: " << _round.active << std::endl;
-  if (_round.ack_count >= majority && _round.active) {
+  std::cerr << "Active: " << round.active << std::endl;
+  if (round.ack_count >= majority && round.active) {
     std::cerr << "Deciding..." << std::endl;
+
+    {
+      std::lock_guard<std::mutex> lock(_round_mutex);
+      _round = round;
+    }
+
     decide();
-  } else if (_round.nack_count > 0 && (_round.ack_count + _round.nack_count >= majority) && _round.active) {
-    _round.active_proposal_number++;
-    _round.ack_count = 0;
-    _round.nack_count = 0;
+  } else if (round.nack_count > 0 && (round.ack_count + round.nack_count >= majority) && round.active) {
+    round.active_proposal_number++;
+    round.ack_count = 0;
+    round.nack_count = 0;
 
     std::vector<Packet> packets;
-    Proposal proposal{_round.proposed_value, _round.active_proposal_number};
+    Proposal proposal{round.proposed_value, round.active_proposal_number};
     Packet pkt;
     create_proposal_packet(std::move(proposal), pkt);
 
-    std::cerr << "_round.proposed_value values: " << std::endl;
-    for (const auto& value : _round.proposed_value) {
+    std::cerr << "round.proposed_value values: " << std::endl;
+    for (const auto& value : round.proposed_value) {
       std::cerr << value << " ";
     }
     std::cerr << std::endl;
+
+    {
+      std::lock_guard<std::mutex> lock(_round_mutex);
+      _round = round;
+    }
+
     packets.push_back(std::move(pkt));
     beb_broadcast(packets);
   }

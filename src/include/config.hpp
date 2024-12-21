@@ -7,7 +7,6 @@
 
 constexpr uint32_t read_event_loop_workers = 5;
 constexpr uint32_t write_event_loop_workers = 3;
-//constexpr uint32_t monitor_delivery_workers = 2;
 static_assert(read_event_loop_workers + write_event_loop_workers <= 8);
 
 class PlConfig {

@@ -39,6 +39,7 @@ private:
   LatticeConfig _cfg;
   std::vector<Parser::Host> _hosts;
 //  std::vector<Round> _rounds;
+  std::mutex _round_mutex;
   Round _round; // for one round only now.
   std::mutex _outfile_mutex;
   std::ofstream _outfile;
