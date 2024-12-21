@@ -140,7 +140,6 @@ void AcceptMessage::serialize(std::vector<uint8_t> &buffer) {
     bool nack_flag = static_cast<bool>(accept.nack);
     buffer.push_back(nack_flag);
 
-    // Add the proposal number
     buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&accept.proposal_number),
                   reinterpret_cast<uint8_t*>(&accept.proposal_number) + sizeof(accept.proposal_number));
 

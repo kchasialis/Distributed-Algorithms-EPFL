@@ -15,29 +15,27 @@ constexpr static size_t HEADER_SIZE = sizeof(uint64_t) + sizeof(PacketType) + si
 
 class Packet {
 private:
-    uint64_t _pid;
-    PacketType _type;
-    uint32_t _seq_id;
-    std::vector<uint8_t> _data;
+  uint64_t _pid;
+  PacketType _type;
+  uint32_t _seq_id;
+  std::vector<uint8_t> _data;
 
-    static std::atomic<uint32_t> _global_seq_id;
+  static std::atomic<uint32_t> _global_seq_id;
 
 public:
-    Packet() = default;
-    Packet(uint64_t pid, PacketType type);
-    Packet(uint64_t pid, PacketType type, const std::vector<uint8_t>& data);
-    Packet(uint64_t pid, PacketType type, std::vector<uint8_t>&& data);
-    Packet(uint64_t pid, PacketType type, uint32_t seq_id);
-//    Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data);
-//    Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data);
-    uint64_t pid() const;
-    PacketType type() const;
-    uint32_t seq_id() const;
-    const std::vector<uint8_t>& data() const;
-    void serialize(std::vector<uint8_t> &buffer) const;
-    void deserialize(const std::vector<uint8_t>& buffer);
+  Packet() = default;
+  Packet(uint64_t pid, PacketType type);
+  Packet(uint64_t pid, PacketType type, const std::vector<uint8_t>& data);
+  Packet(uint64_t pid, PacketType type, std::vector<uint8_t>&& data);
+  Packet(uint64_t pid, PacketType type, uint32_t seq_id);
+  uint64_t pid() const;
+  PacketType type() const;
+  uint32_t seq_id() const;
+  const std::vector<uint8_t>& data() const;
+  void serialize(std::vector<uint8_t> &buffer) const;
+  void deserialize(const std::vector<uint8_t>& buffer);
 
-    bool operator==(const Packet& rhs) const;
+  bool operator==(const Packet& rhs) const;
 };
 
 struct PacketHash {

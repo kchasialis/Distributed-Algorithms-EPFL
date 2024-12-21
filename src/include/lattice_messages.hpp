@@ -5,9 +5,8 @@
 #include <array>
 
 enum class LatticeMessageType : uint8_t {
-    PROPOSAL = 0,
-    ACCEPT = 1,
-    DECIDE = 2
+  PROPOSAL = 0,
+  ACCEPT = 1,
 };
 
 // Batch 8 messages at a time.
@@ -59,18 +58,4 @@ public:
 
 private:
   std::vector<Accept> _accepts;
-};
-
-struct Decide {
-  // NOTE(kostas): FILLME.
-};
-
-class DecideMessage {
-public:
-  DecideMessage() = default;
-  void add_decision(Decide &&decision);
-  void serialize(std::vector<uint8_t> &buffer);
-  void deserialize(const std::vector<uint8_t> &buffer);
-private:
-  std::vector<Decide> _decisions;
 };

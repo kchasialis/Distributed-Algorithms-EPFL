@@ -16,12 +16,6 @@ Packet::Packet(uint64_t pid, PacketType type, std::vector<uint8_t>&& data)
 Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id)
         : _pid(pid), _type(type), _seq_id(seq_id) {}
 
-//Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id, const std::vector<uint8_t>& data)
-//        : _pid(pid), _type(type), _seq_id(seq_id), _data(data) {}
-//
-//Packet::Packet(uint64_t pid, PacketType type, uint32_t seq_id, std::vector<uint8_t>&& data)
-//        : _pid(pid), _type(type), _seq_id(seq_id), _data(std::move(data)) {}
-
 uint64_t Packet::pid() const {
   return _pid;
 }
