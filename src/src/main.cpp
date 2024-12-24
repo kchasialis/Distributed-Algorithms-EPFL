@@ -48,7 +48,7 @@ static int run_process(Parser &parser, const LatticeConfig& cfg) {
     return 1;
   }
 
-  std::cerr << "Starting process with id: " << parser.id() << std::endl;
+//  std::cerr << "Starting process with id: " << parser.id() << std::endl;
 
   ProcessLattice process(parser.id(), current_host.ip, current_host.port,
                          hosts, cfg, parser.outputPath());

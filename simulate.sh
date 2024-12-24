@@ -10,8 +10,8 @@ fi
 num_processes=$1
 
 # File paths (modify these if needed)
-hosts_file="./custom_tests/hosts/fifo-hosts.txt"
-config_file="./custom_tests/configs/fifo-config.config"
+hosts_file="./custom_tests/hosts/lattice-hosts.txt"
+config_dir="./custom_tests/configs"
 output_dir="./custom_tests/output"
 
 # Ensure output directory exists
@@ -26,7 +26,8 @@ trap 'echo "Terminating processes..."; kill ${pids[@]} 2>/dev/null; exit' SIGINT
 # Start the remaining processes in the background
 for ((i = 1; i <= num_processes; i++)); do
     echo "Starting process $i in background..."
-    ./run.sh --id "$i" --hosts "$hosts_file" --output "$output_dir/$i.output" "$config_file" &
+#    ./run.sh --id "$i" --hosts "$hosts_file" --output "$output_dir/$i.output" "$config_file" &
+    ./run.sh --id "$i" --hosts "$hosts_file" --output "$output_dir/$i.output" "$config_dir/lattice-config$i.config" &
     pids+=($!)
 done
 

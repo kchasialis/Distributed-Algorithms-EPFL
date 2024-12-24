@@ -6,12 +6,16 @@ ProcessLattice::ProcessLattice(uint64_t pid, in_addr_t addr, uint16_t port,
                                const std::vector<Parser::Host> &hosts, LatticeConfig cfg,
                                const std::string& outfname) :
                                _pid(pid), _cfg(std::move(cfg)), _hosts(hosts),
+//                               _rounds_mutexes(_cfg.num_proposals()),
+//                               _rounds_mutexes(16),
                                _rounds(_cfg.num_proposals()), _next_round_to_output(0),
                                _outfile(outfname, std::ios::out | std::ios::trunc) {
 
   for (uint32_t i = 0; i < _cfg.num_proposals(); i++) {
     _rounds[i].round_number = i;
   }
+
+  _start_time = std::chrono::steady_clock::now();
 
   _pl = new PerfectLink(pid, addr, port, hosts, _read_event_loop, _write_event_loop,
                         [this](Packet &&pkt) {
@@ -33,7 +37,7 @@ ProcessLattice::ProcessLattice(uint64_t pid, in_addr_t addr, uint16_t port,
 }
 
 ProcessLattice::~ProcessLattice() {
-  std::cerr << "Goodbye from process " << _pid << std::endl;
+//  std::cerr << "Goodbye from process " << _pid << std::endl;
   _thread_pool->stop();
   _outfile.close();
   delete _pl;
@@ -130,8 +134,16 @@ Packet ProcessLattice::create_accept_packet(const AcceptMessage &accept_msg) con
 }
 
 void ProcessLattice::propose(ProposalMessage &proposal_msg) {
+//  for (auto& proposal : proposal_msg.proposals()) {
+//    {
+//      std::lock_guard<std::mutex> lock_round(_rounds_mutexes[proposal.round]);
+////      std::lock_guard<std::mutex> lock_round(_rounds_mutexes[proposal.round % 16]);
+//      _rounds[proposal.round].proposed_value = proposal.proposed_value;
+//      _rounds[proposal.round].active = true;
+//    }
+//  }
   {
-    std::lock_guard<std::mutex> lock(_round_mutex);
+    std::lock_guard<std::mutex> lock_round(_round_mutex);
     for (auto& proposal : proposal_msg.proposals()) {
       _rounds[proposal.round].proposed_value = proposal.proposed_value;
       _rounds[proposal.round].active = true;
@@ -142,11 +154,11 @@ void ProcessLattice::propose(ProposalMessage &proposal_msg) {
 }
 
 void ProcessLattice::decide(Round &round, std::unique_lock<std::mutex>&& lock) {
-  std::cerr << "Decided value:" << std::endl;
-  for (const auto& value : round.proposed_value) {
-    std::cerr << value << " ";
-  }
-  std::cerr << std::endl;
+//  std::cerr << "Decided value:" << std::endl;
+//  for (const auto& value : round.proposed_value) {
+//    std::cerr << value << " ";
+//  }
+//  std::cerr << std::endl;
   round.active = false;
   lock.unlock();
 
@@ -172,6 +184,13 @@ void ProcessLattice::decide(Round &round, std::unique_lock<std::mutex>&& lock) {
       _decisions.erase(_next_round_to_output);
 
       _next_round_to_output++;
+
+      if (_next_round_to_output == _cfg.num_proposals()) {
+        std::cerr << "Process " << _pid << ": all decisions made!" << std::endl;
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - _start_time).count();
+        std::cerr << "Execution time: " << duration << "ms" << std::endl;
+      }
     }
   }
 }
@@ -193,6 +212,8 @@ void ProcessLattice::handle_proposal_msg(ProposalMessage &&proposal_msg, uint64_
 }
 
 void ProcessLattice::handle_proposal(Proposal &&proposal, Accept &accept) {
+//  std::unique_lock<std::mutex> lock(_rounds_mutexes[proposal.round]);
+//  std::lock_guard<std::mutex> lock(_rounds_mutexes[proposal.round % 16]);
   std::lock_guard<std::mutex> lock(_round_mutex);
 
   auto& round = _rounds[proposal.round];
@@ -230,6 +251,8 @@ void ProcessLattice::handle_accept_msg(const AcceptMessage &accept_msg, uint64_t
 }
 
 void ProcessLattice::handle_ack_msg(const Accept &accept) {
+//  std::unique_lock<std::mutex> lock(_rounds_mutexes[accept.round]);
+//  std::unique_lock<std::mutex> lock(_rounds_mutexes[accept.round % 16]);
   std::unique_lock<std::mutex> lock(_round_mutex);
 
   auto& round = _rounds[accept.round];
@@ -246,6 +269,8 @@ void ProcessLattice::handle_ack_msg(const Accept &accept) {
 }
 
 void ProcessLattice::handle_nack_msg(const Accept &accept) {
+//  std::unique_lock<std::mutex> lock(_rounds_mutexes[accept.round]);
+//  std::unique_lock<std::mutex> lock(_rounds_mutexes[accept.round % 16]);
   std::unique_lock<std::mutex> lock(_round_mutex);
 
   auto& round = _rounds[accept.round];

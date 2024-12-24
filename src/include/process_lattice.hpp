@@ -36,11 +36,13 @@ private:
   PerfectLink *_pl;
   LatticeConfig _cfg;
   std::vector<Parser::Host> _hosts;
+//  std::vector<std::mutex> _rounds_mutexes;
   std::mutex _round_mutex;
   std::vector<Round> _rounds;
   std::mutex _decisions_mutex;
   std::unordered_map<uint32_t, std::vector<uint32_t>> _decisions;
   uint32_t _next_round_to_output;
+  std::chrono::steady_clock::time_point _start_time;
   std::mutex _outfile_mutex;
   std::ofstream _outfile;
 
