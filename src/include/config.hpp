@@ -5,8 +5,8 @@
 #include <vector>
 #include <string>
 
-constexpr uint32_t read_event_loop_workers = 5;
-constexpr uint32_t write_event_loop_workers = 3;
+constexpr uint32_t read_event_loop_workers = 1;
+constexpr uint32_t write_event_loop_workers = 1;
 static_assert(read_event_loop_workers + write_event_loop_workers <= 8);
 
 class PlConfig {
@@ -36,7 +36,6 @@ private:
 
 public:
   LatticeConfig(const std::string &config_path);
-  uint32_t max_distinct_props() const;
   uint32_t num_proposals() const;
   const std::vector<uint32_t>& proposals(uint32_t idx) const;
 };

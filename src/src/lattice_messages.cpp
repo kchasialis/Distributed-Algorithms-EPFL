@@ -41,11 +41,11 @@ void ProposalMessage::add_proposal(Proposal &&proposal) {
   _proposals.push_back(std::move(proposal));
 }
 
-const std::vector<Proposal>& ProposalMessage::proposals() const {
+std::vector<Proposal>& ProposalMessage::proposals() {
   return _proposals;
 }
 
-void ProposalMessage::serialize(std::vector<uint8_t> &buffer) {
+void ProposalMessage::serialize(std::vector<uint8_t> &buffer) const {
   buffer.clear();
 
   auto n_proposals = static_cast<uint32_t>(_proposals.size());
@@ -62,8 +62,13 @@ void ProposalMessage::serialize(std::vector<uint8_t> &buffer) {
                     reinterpret_cast<uint8_t*>(&value) + sizeof(value));
     }
 
-    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&proposal.active_proposal_number),
-                  reinterpret_cast<uint8_t*>(&proposal.active_proposal_number) + sizeof(proposal.active_proposal_number));
+    auto round = proposal.round;
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&round),
+                  reinterpret_cast<uint8_t*>(&round) + sizeof(round));
+
+    auto active_proposal_number = proposal.active_proposal_number;
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&active_proposal_number),
+                  reinterpret_cast<uint8_t*>(&active_proposal_number) + sizeof(active_proposal_number));
   }
 }
 
@@ -109,11 +114,16 @@ void ProposalMessage::deserialize(const std::vector<uint8_t> &buffer) {
       std::cerr << "[ProposalMessage] Buffer too small to read active proposal number" << std::endl;
       return;
     }
+
+    uint32_t round;
+    std::memcpy(&round, buffer.data() + offset, sizeof(round));
+    offset += sizeof(round);
+
     uint32_t active_proposal_number;
     std::memcpy(&active_proposal_number, buffer.data() + offset, sizeof(active_proposal_number));
     offset += sizeof(active_proposal_number);
 
-    _proposals.push_back({std::move(values), active_proposal_number});
+    _proposals.push_back({std::move(values), round, active_proposal_number});
   }
 }
 
@@ -129,19 +139,24 @@ const std::vector<Accept>& AcceptMessage::accepts() const {
   return _accepts;
 }
 
-void AcceptMessage::serialize(std::vector<uint8_t> &buffer) {
+void AcceptMessage::serialize(std::vector<uint8_t> &buffer) const {
   buffer.clear();
 
   auto n_accepts = static_cast<uint32_t>(_accepts.size());
   buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&n_accepts),
                 reinterpret_cast<uint8_t*>(&n_accepts) + sizeof(n_accepts));
 
-  for (Accept &accept : _accepts) {
+  for (const Accept &accept : _accepts) {
     bool nack_flag = static_cast<bool>(accept.nack);
     buffer.push_back(nack_flag);
 
-    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&accept.proposal_number),
-                  reinterpret_cast<uint8_t*>(&accept.proposal_number) + sizeof(accept.proposal_number));
+    auto round = accept.round;
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&round),
+                  reinterpret_cast<uint8_t*>(&round) + sizeof(round));
+
+    auto proposal_number = accept.proposal_number;
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&proposal_number),
+                  reinterpret_cast<uint8_t*>(&proposal_number) + sizeof(proposal_number));
 
     auto n_values = static_cast<uint32_t>(accept.accepted_value.size());
     buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&n_values),
@@ -182,6 +197,10 @@ void AcceptMessage::deserialize(const std::vector<uint8_t> &buffer) {
       return;
     }
 
+    uint32_t round;
+    std::memcpy(&round, buffer.data() + offset, sizeof(round));
+    offset += sizeof(round);
+
     uint32_t proposal_number;
     std::memcpy(&proposal_number, buffer.data() + offset, sizeof(proposal_number));
     offset += sizeof(proposal_number);
@@ -205,6 +224,6 @@ void AcceptMessage::deserialize(const std::vector<uint8_t> &buffer) {
       offset += sizeof(uint32_t);
     }
 
-    _accepts.push_back({nack, proposal_number, std::move(accepted_value)});
+    _accepts.push_back({nack, round, proposal_number, std::move(accepted_value)});
   }
 }

@@ -28,6 +28,8 @@ public:
   Packet(uint64_t pid, PacketType type, const std::vector<uint8_t>& data);
   Packet(uint64_t pid, PacketType type, std::vector<uint8_t>&& data);
   Packet(uint64_t pid, PacketType type, uint32_t seq_id);
+  Packet(const Packet& other) = default;
+  Packet(Packet&& other) = default;
   uint64_t pid() const;
   PacketType type() const;
   uint32_t seq_id() const;

@@ -28,23 +28,25 @@ private:
 
 struct Proposal {
   std::vector<uint32_t> proposed_value{};
-  uint32_t active_proposal_number = 0;
+  uint32_t round{0};
+  uint32_t active_proposal_number{0};
 };
 
 class ProposalMessage {
 public:
   ProposalMessage();
   void add_proposal(Proposal &&proposal);
-  const std::vector<Proposal>& proposals() const;
-  void serialize(std::vector<uint8_t> &buffer);
+  std::vector<Proposal>& proposals();
+  void serialize(std::vector<uint8_t> &buffer) const;
   void deserialize(const std::vector<uint8_t> &buffer);
 private:
   std::vector<Proposal> _proposals;
 };
 
 struct Accept {
-  bool nack;
-  uint32_t proposal_number;
+  bool nack{false};
+  uint32_t round{0};
+  uint32_t proposal_number{0};
   std::vector<uint32_t> accepted_value;
 };
 
@@ -53,7 +55,7 @@ public:
   AcceptMessage();
   void add_accept(Accept &&accept);
   const std::vector<Accept>& accepts() const;
-  void serialize(std::vector<uint8_t> &buffer);
+  void serialize(std::vector<uint8_t> &buffer) const;
   void deserialize(const std::vector<uint8_t> &buffer);
 
 private:

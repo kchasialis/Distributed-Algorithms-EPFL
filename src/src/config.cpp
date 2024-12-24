@@ -91,10 +91,6 @@ LatticeConfig::LatticeConfig(const std::string &config_path) {
   }
 }
 
-uint32_t LatticeConfig::max_distinct_props() const {
-  return _max_distinct_all_prop;
-}
-
 uint32_t LatticeConfig::num_proposals() const {
   return static_cast<uint32_t>(_proposals.size());
 }
