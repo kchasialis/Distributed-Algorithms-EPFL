@@ -5,7 +5,7 @@
 #include <vector>
 #include <string>
 
-constexpr uint32_t read_event_loop_workers = 1;
+constexpr uint32_t read_event_loop_workers = 0;
 constexpr uint32_t write_event_loop_workers = 1;
 static_assert(read_event_loop_workers + write_event_loop_workers <= 8);
 
