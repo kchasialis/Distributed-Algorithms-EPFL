@@ -5,8 +5,13 @@
 ProcessLattice::ProcessLattice(uint64_t pid, in_addr_t addr, uint16_t port,
                                const std::vector<Parser::Host> &hosts, LatticeConfig cfg,
                                const std::string& outfname) :
-                               _pid(pid), _addr(addr), _port(port), _cfg(std::move(cfg)),
-                               _hosts(hosts), _outfile(outfname, std::ios::out | std::ios::trunc) {
+                               _pid(pid), _cfg(std::move(cfg)), _hosts(hosts),
+                               _rounds(_cfg.num_proposals()), _next_round_to_output(0),
+                               _outfile(outfname, std::ios::out | std::ios::trunc) {
+
+  for (uint32_t i = 0; i < _cfg.num_proposals(); i++) {
+    _rounds[i].round_number = i;
+  }
 
   _pl = new PerfectLink(pid, addr, port, hosts, _read_event_loop, _write_event_loop,
                         [this](Packet &&pkt) {
@@ -15,11 +20,11 @@ ProcessLattice::ProcessLattice(uint64_t pid, in_addr_t addr, uint16_t port,
 
   _thread_pool = new ThreadPool(8);
 
-//  for (uint32_t i = 0; i < read_event_loop_workers; i++) {
-//    _thread_pool->enqueue([this] {
-//        this->_read_event_loop.run();
-//    });
-//  }
+  for (uint32_t i = 0; i < read_event_loop_workers; i++) {
+    _thread_pool->enqueue([this] {
+        this->_read_event_loop.run();
+    });
+  }
   for (uint32_t i = 0; i < write_event_loop_workers; i++) {
     _thread_pool->enqueue([this] {
         this->_write_event_loop.run();
@@ -50,18 +55,14 @@ void ProcessLattice::run() {
   auto num_proposals = _cfg.num_proposals();
 
   uint32_t current_round = 0;
-//  std::vector<ProposalMessage> proposal_messages;
   for (uint32_t i = 0; i < num_proposals; i += BATCH_MSG_SIZE) {
     uint32_t packet_size = std::min(BATCH_MSG_SIZE, num_proposals - i);
     ProposalMessage proposal_msg;
-//    std::vector<Round> rounds;
     for (uint32_t j = 0; j < packet_size; j++) {
       Proposal proposal{_cfg.proposals(i + j), current_round, 0};
       proposal_msg.add_proposal(std::move(proposal));
-//      rounds.emplace_back(current_round, _cfg.proposals(i + j));
       current_round++;
     }
-//    set_rounds(std::move(rounds));
 
     propose(proposal_msg);
   }
@@ -77,18 +78,6 @@ void ProcessLattice::beb_broadcast(Packet &&packet) {
   }
 
   beb_deliver(std::move(packet));
-}
-
-void ProcessLattice::beb_broadcast(std::vector<Packet> &packets) {
-  for (const auto& host : _hosts) {
-    if (host.id != _pid) {
-      _pl->send(packets, host.id);
-    }
-  }
-
-  for (auto& pkt : packets) {
-    beb_deliver(std::move(pkt));
-  }
 }
 
 void ProcessLattice::beb_deliver(Packet &&pkt) {
@@ -141,15 +130,20 @@ Packet ProcessLattice::create_accept_packet(const AcceptMessage &accept_msg) con
 
 void ProcessLattice::propose(ProposalMessage &proposal_msg) {
   std::unique_lock<std::mutex> lock(_round_mutex);
+//  std::cerr << "rounds.size(): " << _rounds.size() << std::endl;
   for (auto& proposal : proposal_msg.proposals()) {
-    if (proposal.round < _rounds.size()) {
-      _rounds[proposal.round].proposed_value = proposal.proposed_value;
-      _rounds[proposal.round].active = true;
-    } else {
-      Round round(proposal.proposed_value);
-      round.active = true;
-      _rounds.push_back(std::move(round));
-    }
+//    std::cerr << "Proposing for round: " << proposal.round << std::endl;
+    _rounds[proposal.round].proposed_value = proposal.proposed_value;
+    _rounds[proposal.round].active = true;
+//    if (proposal.round < _rounds.size()) {
+//      _rounds[proposal.round].proposed_value = proposal.proposed_value;
+//      _rounds[proposal.round].active = true;
+//    } else {
+//      Round round;
+//      round.proposed_value = proposal.proposed_value;
+//      round.active = true;
+//      _rounds.push_back(std::move(round));
+//    }
     std::cerr << "Proposing for round: " << proposal.round << std::endl;
 //    std::cerr << "Proposal number: " << proposal.active_proposal_number << std::endl;
     std::cerr << "Proposed value: ";
@@ -172,12 +166,30 @@ void ProcessLattice::decide(Round &round) {
   std::cerr << std::endl;
 
   {
-    std::lock_guard<std::mutex> lock(_outfile_mutex);
-    _outfile << "Decided value: ";
-    for (const auto& value : round.proposed_value) {
-      _outfile << value << " ";
+    std::lock_guard<std::mutex> lock_decisions(_decisions_mutex);
+
+    _decisions[round.round_number] = round.proposed_value;
+
+    while (_decisions.find(_next_round_to_output) != _decisions.end()) {
+      const auto& decided_values = _decisions[_next_round_to_output];
+
+      {
+        std::lock_guard<std::mutex> lock_outfile(_outfile_mutex);
+        for (size_t i = 0; i < decided_values.size(); ++i) {
+          _outfile << decided_values[i];
+          if (i < decided_values.size() - 1) {
+            _outfile << " ";
+          }
+        }
+        _outfile << "\n";
+      }
+
+      _decisions.erase(_next_round_to_output);
+
+      _next_round_to_output++;
     }
   }
+
   round.active = false;
 }
 
@@ -206,9 +218,9 @@ void ProcessLattice::handle_proposal(Proposal &&proposal, Accept &accept) {
 
   std::unique_lock<std::mutex> lock(_round_mutex);
 
-  while (proposal.round >= _rounds.size()) {
-    _rounds.emplace_back();
-  }
+//  while (proposal.round >= _rounds.size()) {
+//    _rounds.emplace_back();
+//  }
 
   auto& round = _rounds[proposal.round];
 
@@ -285,9 +297,9 @@ void ProcessLattice::handle_ack_msg(const Accept &accept) {
 
   std::unique_lock<std::mutex> lock(_round_mutex);
 
-  while (accept.round >= _rounds.size()) {
-    _rounds.emplace_back();
-  }
+//  while (accept.round >= _rounds.size()) {
+//    _rounds.emplace_back();
+//  }
 
   auto& round = _rounds[accept.round];
 
@@ -314,9 +326,9 @@ void ProcessLattice::handle_nack_msg(const Accept &accept) {
 
   std::unique_lock<std::mutex> lock(_round_mutex);
 
-  while (accept.round >= _rounds.size()) {
-    _rounds.emplace_back();
-  }
+//  while (accept.round >= _rounds.size()) {
+//    _rounds.emplace_back();
+//  }
 
   auto& round = _rounds[accept.round];
 
@@ -399,24 +411,3 @@ void ProcessLattice::check_ack_nack(Round &round, uint32_t roundi, std::unique_l
   }
 }
 
-//Round& ProcessLattice::get_round(uint32_t roundi) {
-//  std::lock_guard<std::mutex> lock(_round_mutex);
-//  if (roundi >= _rounds.size()) {
-//    _rounds.resize(roundi + 1);
-//    _rounds[roundi] = Round(roundi);
-//  }
-//  return _rounds[roundi];
-//}
-
-//void ProcessLattice::set_rounds(std::vector<Round> &&rounds) {
-//  std::lock_guard<std::mutex> lock(_round_mutex);
-//  for (auto & round : rounds) {
-//    _rounds.push_back(std::make_shared<Round>(std::move(round)));
-////    if (round.round_number >= _rounds.size()) {
-////      _rounds.resize(round.round_number + 1);
-////      _rounds[round.round_number] = std::make_shared<Round>(round);
-////    } else {
-////      _rounds[round.round_number] = std::make_shared<Round>(std::move(round));
-////    }
-//  }
-//}
