@@ -49,11 +49,11 @@ private:
   Packet create_proposal_packet(ProposalMessage &proposal_msg) const;
   Packet create_accept_packet(const AcceptMessage &accept_msg) const;
   void propose(ProposalMessage &proposal_msg);
-  void decide(Round &round);
+  void decide(Round &round, std::unique_lock<std::mutex>&& lock);
   void handle_proposal_msg(ProposalMessage &&proposal_msg, uint64_t sender_pid);
   void handle_proposal(Proposal &&proposal, Accept &accept);
   void handle_accept_msg(const AcceptMessage &accept_msg, uint64_t sender_pid);
   void handle_ack_msg(const Accept &accept);
   void handle_nack_msg(const Accept &accept);
-  void check_ack_nack(Round &round, uint32_t roundi, std::unique_lock<std::mutex>&& lock);
+  void check_ack_nack(Round &round, std::unique_lock<std::mutex>&& lock);
 };
