@@ -13,9 +13,6 @@ set(SOURCES src/main.cpp
             src/event_handler.cpp
             src/lattice_messages.cpp
             src/process_lattice.cpp
-        # src/process_fifo.cpp
-        # src/urb.cpp
-        #        src/process_pl.cpp
 )
 
 # DO NOT EDIT THE FOLLOWING LINES

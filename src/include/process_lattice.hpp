@@ -12,9 +12,9 @@
 struct Round {
   uint32_t round_number{0};
   bool active{false};
+  uint32_t active_proposal_number{0};
   uint32_t ack_count{0};
   uint32_t nack_count{0};
-  uint32_t active_proposal_number{0};
   std::vector<uint32_t> proposed_value;
   std::vector<uint32_t> accepted_value;
 };
@@ -36,13 +36,12 @@ private:
   PerfectLink *_pl;
   LatticeConfig _cfg;
   std::vector<Parser::Host> _hosts;
-//  std::vector<std::mutex> _rounds_mutexes;
-  std::mutex _round_mutex;
+  std::vector<std::mutex> _rounds_mutexes;
+  std::mutex _rounds_mutex;
   std::vector<Round> _rounds;
   std::mutex _decisions_mutex;
   std::unordered_map<uint32_t, std::vector<uint32_t>> _decisions;
   uint32_t _next_round_to_output;
-  std::chrono::steady_clock::time_point _start_time;
   std::mutex _outfile_mutex;
   std::ofstream _outfile;
 
@@ -54,8 +53,10 @@ private:
   void decide(Round &round, std::unique_lock<std::mutex>&& lock);
   void handle_proposal_msg(ProposalMessage &&proposal_msg, uint64_t sender_pid);
   void handle_proposal(Proposal &&proposal, Accept &accept);
-  void handle_accept_msg(const AcceptMessage &accept_msg, uint64_t sender_pid);
+  void handle_accept_msg(const AcceptMessage &accept_msg);
   void handle_ack_msg(const Accept &accept);
   void handle_nack_msg(const Accept &accept);
   void check_ack_nack(Round &round, std::unique_lock<std::mutex>&& lock);
+  Round &get_round(uint32_t round_number);
+  static void set_union(std::vector<uint32_t> &dest, const std::vector<uint32_t> &src);
 };
